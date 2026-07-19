@@ -1,8 +1,8 @@
 # Dependencies
 node_modules/
 
-# Root-level — no package.json at this level
-package-lock.json
+# Root-level lock file (subdirectory lock files are NOT ignored)
+/package-lock.json
 
 # IDE
 .idea/
@@ -11,4 +11,3 @@ package-lock.json
 # OS
 .DS_Store
 Thumbs.db
-*.md
