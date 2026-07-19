@@ -204,12 +204,11 @@ def upsert_chunks(
         rows = []
         for j, chunk in enumerate(batch_chunks):
             content_hash = hashlib.sha256(chunk.content.encode()).hexdigest()
-            row = {
+            row: dict = {
                 "id": str(uuid.uuid4()),
                 "repo": chunk.repo,
                 "path": chunk.path,
                 "content": chunk.content,
-                "embedding": batch_embs[j] if use_embeddings else None,
                 "level": chunk.level,
                 "language": chunk.language,
                 "start_line": chunk.start_line,
@@ -217,6 +216,8 @@ def upsert_chunks(
                 "content_hash": content_hash,
                 "metadata": chunk.metadata,
             }
+            if use_embeddings:
+                row["embedding"] = batch_embs[j]
             rows.append(row)
 
         # 分批插入

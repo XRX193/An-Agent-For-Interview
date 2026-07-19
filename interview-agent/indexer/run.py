@@ -178,8 +178,15 @@ Topics: {', '.join(repo.get('topics', []))}
         print("  💡 设置 OPENAI_API_KEY 环境变量可开启向量检索")
 
     # ---- Step 5: 写入 Supabase ----
+    # 过滤无效仓库名的 chunks
+    invalid_names = {'-', '.', '..', ''}
+    valid_chunks = [c for c in all_chunks if c.repo not in invalid_names]
+    skipped = len(all_chunks) - len(valid_chunks)
+    if skipped > 0:
+        print(f"\n  ⏭️  跳过 {skipped} 个无效仓库名的代码块")
+
     print("\n📋 Step 5: 写入 Supabase...")
-    count = upsert_chunks(all_chunks, embeddings, config, mode=mode, use_embeddings=use_embeddings)
+    count = upsert_chunks(valid_chunks, embeddings, config, mode=mode, use_embeddings=use_embeddings)
     print(f"  ✅ 成功写入 {count} 个文档")
 
     # ---- 清理 ----
