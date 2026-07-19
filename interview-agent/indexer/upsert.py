@@ -178,18 +178,27 @@ def upsert_chunks(
 
     client = create_client(config.supabase_url, config.supabase_key)
 
-    # 诊断：打印连接信息（隐藏敏感部分）
+    # 诊断：打印连接信息
     masked_url = config.supabase_url[:25] + '***' if len(config.supabase_url) > 25 else '***'
     print(f"  🔗 Supabase: {masked_url}")
     print(f"  🔑 Key 长度: {len(config.supabase_key)} 字符")
 
-    # 测试连接
+    # 直接用 REST API 测试连接
+    import urllib.request, json as json_mod
     try:
-        test = client.table("documents").select("id", count="exact").limit(1).execute()
-        print(f"  ✅ 连接成功，documents 表当前有 {test.count} 条记录")
+        test_req = urllib.request.Request(
+            f"{config.supabase_url}/rest/v1/documents?select=id&limit=1",
+            headers={
+                "apikey": config.supabase_key,
+                "Authorization": f"Bearer {config.supabase_key}",
+            },
+        )
+        with urllib.request.urlopen(test_req) as resp:
+            data = json_mod.loads(resp.read().decode())
+            print(f"  ✅ 连接成功，documents 表当前有 {len(data)} 条记录")
     except Exception as e:
-        print(f"  ❌ 连接测试失败: {e}")
-        print(f"  💡 请检查：1) Supabase URL 是否正确  2) anon key 是否有效  3) documents 表是否存在")
+        print(f"  ❌ REST 连接测试失败: {e}")
+        print(f"  💡 可能是 documents 表不存在，尝试创建...")
 
     total = len(chunks)
     inserted = 0
