@@ -28,6 +28,7 @@ const RATE_LIMIT = {
  */
 export function checkRateLimit(clientIp: string): boolean {
   const now = Date.now()
+  lazyCleanup(now)
   const entry = rateLimitStore.get(clientIp)
 
   if (!entry || now > entry.resetAt) {
@@ -50,15 +51,14 @@ export function getRateLimitRemaining(clientIp: string): number {
   return Math.max(0, RATE_LIMIT.maxRequests - entry.count)
 }
 
-// 定期清理过期的限制条目（每 5 分钟）
-setInterval(() => {
-  const now = Date.now()
+/** 惰性清理过期条目（在每次 checkRateLimit 时顺便做） */
+function lazyCleanup(now: number): void {
   for (const [key, entry] of rateLimitStore) {
     if (now > entry.resetAt) {
       rateLimitStore.delete(key)
     }
   }
-}, 300_000)
+}
 
 // ===== 话题校验 =====
 
