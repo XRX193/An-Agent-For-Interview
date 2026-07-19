@@ -58,8 +58,9 @@ def get_public_repos(config: IndexerConfig) -> list[dict]:
                 print(f"  ❌ GitHub API 错误: {e.code} {e.reason}")
                 break
 
-    # 过滤排除列表
-    repos = [r for r in repos if r["name"] not in config.repo_exclude]
+    # 过滤排除列表和无效仓库名
+    invalid_names = {'-', '.', '..', ''}
+    repos = [r for r in repos if r["name"] not in config.repo_exclude and r["name"] not in invalid_names]
     # 排除 fork 的仓库（可选）
     # repos = [r for r in repos if not r.get("fork", False)]
 

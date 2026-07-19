@@ -184,6 +184,10 @@ def upsert_chunks(
     if mode == "full":
         repos = list({c.repo for c in chunks})
         for repo in repos:
+            # 跳过空仓库名和纯特殊字符的仓库名
+            if not repo or not repo.strip() or repo in ('-', '.', '..'):
+                print(f"  ⏭️  跳过无效仓库名: '{repo}'")
+                continue
             try:
                 client.table("documents").delete().eq("repo", repo).execute()
                 print(f"  🗑️  已清理仓库: {repo}")
