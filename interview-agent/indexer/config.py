@@ -121,8 +121,5 @@ class IndexerConfig:
             missing.append("SUPABASE_URL: 环境变量未设置")
         if not self.supabase_key:
             missing.append("SUPABASE_KEY: 环境变量未设置")
-        if self.embedding_provider == "openai" and not self.openai_api_key:
-            missing.append("OPENAI_API_KEY: 使用 OpenAI Embedding 需要此环境变量")
-        if self.embedding_provider == "voyage" and not self.voyage_api_key:
-            missing.append("VOYAGE_API_KEY: 使用 Voyage AI 需要此环境变量")
+        # Embedding API Key 是可选的，没有也可以用关键词检索
         return missing
