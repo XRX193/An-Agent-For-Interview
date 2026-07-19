@@ -1,156 +1,19 @@
 """
 向量数据库写入
 
-将分块结果和 Embedding 批量写入 Supabase pgvector。
-支持：
-  - 全量模式（先清空再写入）
-  - 增量模式（按文件 hash 判断是否更新）
+将分块结果批量写入 Supabase。
+使用 RPC 函数 insert_documents 绕过 REST 表 API 限制。
 """
 
 import hashlib
-import uuid
+import json
 from config import IndexerConfig
 from chunker import Chunk
 
 
 def init_supabase_tables(config: IndexerConfig) -> None:
-    """初始化 Supabase 数据库表结构和 RPC 函数"""
-    from supabase import create_client
-
-    client = create_client(config.supabase_url, config.supabase_key)
-
-    sql = """
-    -- 启用 pgvector
-    CREATE EXTENSION IF NOT EXISTS vector;
-
-    -- 文档表
-    CREATE TABLE IF NOT EXISTS documents (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        repo TEXT NOT NULL,
-        path TEXT NOT NULL,
-        content TEXT NOT NULL,
-        embedding vector(512),
-        level TEXT NOT NULL CHECK (level IN ('project', 'architecture', 'code', 'history')),
-        language TEXT DEFAULT '',
-        start_line INTEGER DEFAULT 0,
-        end_line INTEGER DEFAULT 0,
-        content_hash TEXT,
-        metadata JSONB DEFAULT '{}',
-        created_at TIMESTAMPTZ DEFAULT now(),
-        updated_at TIMESTAMPTZ DEFAULT now()
-    );
-
-    -- 索引
-    CREATE INDEX IF NOT EXISTS idx_documents_repo ON documents(repo);
-    CREATE INDEX IF NOT EXISTS idx_documents_level ON documents(level);
-    CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-
-    -- 匹配文档的 RPC 函数
-    CREATE OR REPLACE FUNCTION match_documents(
-        query_embedding vector(512),
-        match_threshold float DEFAULT 0.5,
-        match_count int DEFAULT 5
-    )
-    RETURNS TABLE(
-        id UUID,
-        repo TEXT,
-        path TEXT,
-        content TEXT,
-        level TEXT,
-        language TEXT,
-        metadata JSONB,
-        score float
-    )
-    LANGUAGE plpgsql
-    AS $$
-    BEGIN
-        RETURN QUERY
-        SELECT
-            d.id,
-            d.repo,
-            d.path,
-            d.content,
-            d.level,
-            d.language,
-            d.metadata,
-            1 - (d.embedding <=> query_embedding) AS score
-        FROM documents d
-        WHERE 1 - (d.embedding <=> query_embedding) > match_threshold
-        ORDER BY d.embedding <=> query_embedding
-        LIMIT match_count;
-    END;
-    $$;
-
-    -- 列出所有项目的 RPC 函数
-    CREATE OR REPLACE FUNCTION list_projects()
-    RETURNS TABLE(
-        name TEXT,
-        description TEXT,
-        language TEXT,
-        stars INTEGER,
-        url TEXT,
-        topics TEXT[],
-        last_updated TEXT
-    )
-    LANGUAGE plpgsql
-    AS $$
-    BEGIN
-        RETURN QUERY
-        SELECT DISTINCT ON (d.repo)
-            d.repo AS name,
-            COALESCE(d.metadata->>'description', '') AS description,
-            COALESCE(d.metadata->>'primary_language', '') AS language,
-            COALESCE((d.metadata->>'stars')::int, 0) AS stars,
-            COALESCE(d.metadata->>'html_url', '') AS url,
-            COALESCE((SELECT array_agg(t) FROM jsonb_array_elements_text(d.metadata->'topics') t), ARRAY[]::TEXT[]) AS topics,
-            COALESCE(d.metadata->>'updated_at', '') AS last_updated
-        FROM documents d
-        WHERE d.level = 'project'
-        ORDER BY d.repo, d.updated_at DESC;
-    END;
-    $$;
-
-    -- 索引统计
-    CREATE OR REPLACE FUNCTION index_stats()
-    RETURNS TABLE(
-        total_docs BIGINT,
-        total_repos BIGINT,
-        last_indexed_at TEXT
-    )
-    LANGUAGE plpgsql
-    AS $$
-    BEGIN
-        RETURN QUERY
-        SELECT
-            COUNT(*)::BIGINT AS total_docs,
-            COUNT(DISTINCT repo)::BIGINT AS total_repos,
-            to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS') AS last_indexed_at
-        FROM documents;
-    END;
-    $$;
-    """
-
-    try:
-        result = client.rpc("sql_exec", {"query": sql}).execute()
-        print("  ✅ 数据表初始化完成")
-        return result
-    except Exception:
-        # rpc 不允许执行 DDL，提示用户在 Supabase SQL Editor 中手动执行
-        pass
-
-    # 尝试通过 REST API 执行（Supabase Management API）
-    print("  ℹ️  请确保已在 Supabase SQL Editor 中执行建表语句")
-    print("  ℹ️  详见 indexer/upsert.py 中的 init_supabase_tables() 函数的 SQL")
-    print("  ℹ️  下面的 upsert 操作会尝试写入数据，如果表不存在会报错")
-
-    # 保存 SQL 到文件，方便手动执行
-    sql_path = "/tmp/interview_agent_init.sql"
-    try:
-        with open(sql_path, "w") as f:
-            f.write(sql)
-        print(f"  💾 SQL 已保存到: {sql_path}")
-    except OSError:
-        pass
+    """初始化 Supabase 数据库表结构"""
+    print("  ℹ️  请在 Supabase SQL Editor 中手动执行建表 SQL 和创建 RPC 函数")
 
 
 def upsert_chunks(
@@ -160,15 +23,7 @@ def upsert_chunks(
     mode: str = "full",
     use_embeddings: bool = True,
 ) -> int:
-    """批量写入 chunks 和 embeddings 到 Supabase
-
-    Args:
-        chunks: 代码块列表
-        embeddings: Embedding 向量列表（use_embeddings=False 时为空）
-        config: 索引器配置
-        mode: "full" 全量或 "incremental" 增量
-        use_embeddings: 是否写入向量（False = 关键词检索模式）
-    """
+    """批量写入 chunks 到 Supabase（使用 RPC 函数）"""
     from supabase import create_client
 
     if config.dry_run:
@@ -178,57 +33,21 @@ def upsert_chunks(
 
     client = create_client(config.supabase_url, config.supabase_key)
 
-    # 诊断：打印连接信息
-    masked_url = config.supabase_url[:25] + '***' if len(config.supabase_url) > 25 else '***'
-    print(f"  🔗 Supabase: {masked_url}")
-    print(f"  🔑 Key 长度: {len(config.supabase_key)} 字符")
-
-    # 直接用 REST API 测试连接
-    import urllib.request, json as json_mod
-    try:
-        test_req = urllib.request.Request(
-            f"{config.supabase_url}/rest/v1/documents?select=id&limit=1",
-            headers={
-                "apikey": config.supabase_key,
-                "Authorization": f"Bearer {config.supabase_key}",
-            },
-        )
-        with urllib.request.urlopen(test_req) as resp:
-            data = json_mod.loads(resp.read().decode())
-            print(f"  ✅ 连接成功，documents 表当前有 {len(data)} 条记录")
-    except Exception as e:
-        print(f"  ❌ REST 连接测试失败: {e}")
-        print(f"  💡 可能是 documents 表不存在，尝试创建...")
-
     total = len(chunks)
     inserted = 0
-
-    # 全量模式：先删除旧数据（按仓库）
-    if mode == "full":
-        repos = list({c.repo for c in chunks})
-        for repo in repos:
-            # 跳过空仓库名和纯特殊字符的仓库名
-            if not repo or not repo.strip() or repo in ('-', '.', '..'):
-                print(f"  ⏭️  跳过无效仓库名: '{repo}'")
-                continue
-            try:
-                client.table("documents").delete().eq("repo", repo).execute()
-                print(f"  🗑️  已清理仓库: {repo}")
-            except Exception as e:
-                print(f"  ⚠️  清理仓库 {repo} 失败: {e}")
+    batch_size = 50
 
     mode_text = "向量检索" if use_embeddings else "关键词检索"
-    print(f"  📤 写入 {total} 个文档到 Supabase（{mode_text}）...")
+    print(f"  📤 写入 {total} 个文档到 Supabase（{mode_text}，RPC 方式）...")
 
-    for i in range(0, total, config.batch_size):
-        batch_chunks = chunks[i : i + config.batch_size]
-        batch_embs = embeddings[i : i + config.batch_size] if use_embeddings else []
+    for i in range(0, total, batch_size):
+        batch = chunks[i : i + batch_size]
 
         rows = []
-        for j, chunk in enumerate(batch_chunks):
+        for chunk in batch:
             content_hash = hashlib.sha256(chunk.content.encode()).hexdigest()
-            row: dict = {
-                "id": str(uuid.uuid4()),
+
+            row = {
                 "repo": chunk.repo,
                 "path": chunk.path,
                 "content": chunk.content,
@@ -237,27 +56,30 @@ def upsert_chunks(
                 "start_line": chunk.start_line,
                 "end_line": chunk.end_line,
                 "content_hash": content_hash,
-                "metadata": chunk.metadata,
+                "metadata": json.dumps(chunk.metadata),
             }
-            if use_embeddings:
-                row["embedding"] = batch_embs[j]
+
+            if use_embeddings and i < len(embeddings):
+                idx = i + (len(rows))
+                if idx < len(embeddings):
+                    row["embedding"] = embeddings[idx]
+
             rows.append(row)
 
-        # 分批插入
-        max_retries = 3
         import time
-        for attempt in range(max_retries):
+        for attempt in range(3):
             try:
-                result = client.table("documents").insert(rows).execute()
+                result = client.rpc("insert_documents", {"rows": rows}).execute()
                 inserted += len(rows)
                 break
             except Exception as e:
-                if attempt == max_retries - 1:
-                    print(f"    ❌ 写入失败: {e}")
-                    raise
-                print(f"    ⚠️  重试 {attempt + 1}/{max_retries}")
-                time.sleep(2 ** attempt)
+                if attempt == 2:
+                    print(f"    ❌ 批次写入失败: {e}")
+                else:
+                    print(f"    ⚠️  重试 {attempt + 1}/3")
+                    time.sleep(2)
 
-        print(f"    ✅ {min(i + config.batch_size, total)}/{total}")
+        print(f"    ✅ {min(i + batch_size, total)}/{total}")
 
+    print(f"  ✅ 成功写入 {inserted} 个文档")
     return inserted
