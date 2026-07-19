@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Root-level — no package.json at this level
+package-lock.json
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+*.md
