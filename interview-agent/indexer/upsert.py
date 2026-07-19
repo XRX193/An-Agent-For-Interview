@@ -29,7 +29,7 @@ def upsert_chunks(
         "generated_at": __import__("datetime").datetime.now().isoformat(),
         "total_chunks": len(chunks),
         "repos": list({c.repo for c in chunks}),
-        chunks_to_json(chunks),
+        "chunks": chunks_to_json(chunks),
     }
 
     with open(output_path, "w", encoding="utf-8") as f:
