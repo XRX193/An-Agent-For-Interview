@@ -69,7 +69,7 @@ def upsert_chunks(
         import time
         for attempt in range(3):
             try:
-                result = client.rpc("insert_documents", {"rows": rows}).execute()
+                result = client.rpc("insert_documents", {"payload": rows}).execute()
                 inserted += len(rows)
                 break
             except Exception as e:
