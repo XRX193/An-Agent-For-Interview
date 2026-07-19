@@ -1,6 +1,3 @@
-/**
- * Cloudflare Worker 入口 —— 路由分发
- */
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { handleChat } from './chat'
@@ -22,7 +19,20 @@ type Env = {
 
 const app = new Hono<{ Bindings: Env }>()
 
-app.use('/api/*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'OPTIONS'], allowHeaders: ['Content-Type'], maxAge: 86400 }))
+app.use('*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'OPTIONS'], allowHeaders: ['Content-Type'], maxAge: 86400 }))
+
+// 临时：极简测试路由
+app.post('/api/chat', async (c) => {
+  const env = c.env
+  if (!env.DEEPSEEK_API_KEY) {
+    return c.json({ error: 'MISSING_DEEPSEEK_API_KEY' })
+  }
+  return handleChat({
+    question: (await c.req.json()).question ?? '',
+    history: [],
+    env: env,
+  })
+})
 
 app.get('/api/health', async (c) => {
   try {
@@ -42,25 +52,6 @@ app.get('/api/projects', async (c) => {
   }
 })
 
-app.post('/api/chat', async (c) => {
-  const clientIp = extractClientIP(c.req.raw)
-  if (!checkRateLimit(clientIp)) {
-    return c.json({ error: '请求过于频繁（20次/分钟）' }, 429)
-  }
-
-  let body: { question?: string; history?: unknown[]; scope?: string }
-  try { body = await c.req.json() } catch { return c.json({ error: '无效请求体' }, 400) }
-  if (!body.question?.trim()) return c.json({ error: '问题不能为空' }, 400)
-
-  return handleChat({
-    question: body.question!,
-    history: (body.history ?? []) as Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
-    scope: body.scope,
-    env: c.env,
-  })
-})
-
-app.all('/api/*', c => c.json({ error: 'Not Found' }, 404))
-app.all('*', c => c.json({ error: 'Not Found' }, 404))
+app.all('*', c => c.text('Not Found', 404))
 
 export default app
