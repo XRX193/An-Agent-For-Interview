@@ -1,57 +1,91 @@
-import { Hono } from 'hono'
-import { cors } from 'hono/cors'
 import { handleChat } from './chat'
 import { listProjects, getIndexStats } from './db'
 import { checkRateLimit, extractClientIP } from './guardrails'
 
-type Env = {
+interface Env {
   DEEPSEEK_API_KEY: string
   DEEPSEEK_MODEL?: string
   SUPABASE_URL: string
   SUPABASE_ANON_KEY: string
   OPENAI_API_KEY?: string
-  EMBEDDING_PROVIDER?: string
   CANDIDATE_NAME?: string
   CANDIDATE_TITLE?: string
   GITHUB_USERNAME?: string
   AGENT_LANGUAGE?: string
 }
 
-const app = new Hono<{ Bindings: Env }>()
-
-app.use('*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'OPTIONS'], allowHeaders: ['Content-Type'], maxAge: 86400 }))
-
-// 临时：极简测试路由
-app.post('/api/chat', async (c) => {
-  const env = c.env
-  if (!env.DEEPSEEK_API_KEY) {
-    return c.json({ error: 'MISSING_DEEPSEEK_API_KEY' })
+function corsHeaders(): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '86400',
   }
-  return handleChat({
-    question: (await c.req.json()).question ?? '',
-    history: [],
-    env: env,
+}
+
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
   })
-})
+}
 
-app.get('/api/health', async (c) => {
-  try {
-    const stats = await getIndexStats(c.env.SUPABASE_URL, c.env.SUPABASE_ANON_KEY)
-    return c.json({ ok: true, ...stats })
-  } catch {
-    return c.json({ ok: true, lastIndexedAt: null })
-  }
-})
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url)
+    const path = url.pathname
 
-app.get('/api/projects', async (c) => {
-  try {
-    const projects = await listProjects(c.env.SUPABASE_URL, c.env.SUPABASE_ANON_KEY)
-    return c.json(projects)
-  } catch {
-    return c.json([])
-  }
-})
+    // CORS 预检
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: corsHeaders() })
+    }
 
-app.all('*', c => c.text('Not Found', 404))
+    // GET /api/health
+    if (request.method === 'GET' && path === '/api/health') {
+      try {
+        const stats = await getIndexStats(env.SUPABASE_URL, env.SUPABASE_ANON_KEY)
+        return json({ ok: true, ...stats })
+      } catch {
+        return json({ ok: true, lastIndexedAt: null })
+      }
+    }
 
-export default app
+    // GET /api/projects
+    if (request.method === 'GET' && path === '/api/projects') {
+      try {
+        const projects = await listProjects(env.SUPABASE_URL, env.SUPABASE_ANON_KEY)
+        return json(projects)
+      } catch {
+        return json([])
+      }
+    }
+
+    // POST /api/chat
+    if (request.method === 'POST' && path === '/api/chat') {
+      const clientIp = extractClientIP(request)
+      if (!checkRateLimit(clientIp)) {
+        return json({ error: '请求过于频繁' }, 429)
+      }
+
+      let body: { question?: string; history?: unknown[]; scope?: string }
+      try {
+        body = await request.json()
+      } catch {
+        return json({ error: '无效请求体' }, 400)
+      }
+
+      if (!body.question?.trim()) {
+        return json({ error: '问题不能为空' }, 400)
+      }
+
+      return handleChat({
+        question: body.question!,
+        history: (body.history ?? []) as Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
+        scope: body.scope,
+        env,
+      })
+    }
+
+    return json({ error: 'Not Found' }, 404)
+  },
+}
