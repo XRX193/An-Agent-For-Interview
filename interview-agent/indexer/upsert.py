@@ -1,16 +1,15 @@
 """
-向量数据库写入 —— HTTP 直连 Supabase RPC
+写入 Supabase —— psycopg2 直连 PostgreSQL
 """
 import hashlib
 import json
-import urllib.request
 import time
 from config import IndexerConfig
 from chunker import Chunk
 
 
 def init_supabase_tables(config: IndexerConfig) -> None:
-    print("  ℹ️  请在 Supabase SQL Editor 中手动执行建表 SQL")
+    print("  ℹ️  建表 SQL 请手动在 Supabase SQL Editor 执行")
 
 
 def upsert_chunks(
@@ -20,66 +19,106 @@ def upsert_chunks(
     mode: str = "full",
     use_embeddings: bool = True,
 ) -> int:
-    """通过 HTTP POST /rest/v1/rpc/insert_documents 批量写入"""
     if config.dry_run:
         print(f"  🔍 [DRY RUN] 将写入 {len(chunks)} 个文档")
         return len(chunks)
 
-    total = len(chunks)
+    # 从 Supabase URL 提取 project_id，构建直连地址
+    project_id = config.supabase_url.replace("https://", "").replace(".supabase.co", "")
+    db_host = f"db.{project_id}.supabase.co"
+    db_user = "postgres"
+    db_name = "postgres"
+    db_password = config.supabase_key  # fallback
+
+    # 尝试从环境变量读取数据库密码
+    import os
+    env_pass = os.getenv("SUPABASE_DB_PASSWORD", "")
+    if env_pass:
+        db_password = env_pass
+
+    print(f"  🔗 直连 PostgreSQL: {db_host}")
+
+    try:
+        import psycopg2
+    except ImportError:
+        print("  ❌ psycopg2 未安装，请在 requirements.txt 中添加 psycopg2-binary")
+        return 0
+
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            host=db_host,
+            port=6543,  # Supabase 连接池端口
+            dbname=db_name,
+            user=db_user,
+            password=db_password,
+            sslmode="require",
+            connect_timeout=10,
+        )
+        print("  ✅ PostgreSQL 连接成功")
+    except Exception as e:
+        print(f"  ⚠️  连接池端口失败: {e}")
+        try:
+            conn = psycopg2.connect(
+                host=db_host,
+                port=5432,
+                dbname=db_name,
+                user=db_user,
+                password=db_password,
+                sslmode="require",
+                connect_timeout=10,
+            )
+            print("  ✅ PostgreSQL 直连成功 (5432)")
+        except Exception as e2:
+            print(f"  ❌ PostgreSQL 连接失败: {e2}")
+            print(f"  💡 请检查 SUPABASE_DB_PASSWORD 是否正确")
+            return 0
+
+    cur = conn.cursor()
     inserted = 0
+    total = len(chunks)
     batch_size = 50
 
-    mode_text = "向量检索" if use_embeddings else "关键词检索"
-    print(f"  📤 写入 {total} 个文档到 Supabase（{mode_text}，HTTP RPC）...")
+    print(f"  📤 写入 {total} 个文档（直连 PostgreSQL）...")
 
     for i in range(0, total, batch_size):
         batch = chunks[i : i + batch_size]
+        values = []
+        params = []
 
-        rows = []
         for chunk in batch:
             content_hash = hashlib.sha256(chunk.content.encode()).hexdigest()
-            row = {
-                "repo": chunk.repo,
-                "path": chunk.path,
-                "content": chunk.content,
-                "level": chunk.level,
-                "language": chunk.language,
-                "start_line": chunk.start_line,
-                "end_line": chunk.end_line,
-                "content_hash": content_hash,
-                "metadata": chunk.metadata,
-            }
-            rows.append(row)
+            values.append("(%s, %s, %s, %s, %s, %s, %s, %s, %s)")
+            params.extend([
+                chunk.repo,
+                chunk.path,
+                chunk.content,
+                chunk.level,
+                chunk.language,
+                chunk.start_line,
+                chunk.end_line,
+                content_hash,
+                json.dumps(chunk.metadata),
+            ])
 
-        payload = json.dumps({"payload": rows}).encode("utf-8")
+        sql = f"INSERT INTO documents (repo, path, content, level, language, start_line, end_line, content_hash, metadata) VALUES {', '.join(values)}"
 
         for attempt in range(3):
             try:
-                req = urllib.request.Request(
-                    f"{config.supabase_url}/rest/v1/rpc/insert_documents",
-                    data=payload,
-                    headers={
-                        "apikey": config.supabase_key,
-                        "Authorization": f"Bearer {config.supabase_key}",
-                        "Content-Type": "application/json",
-                    },
-                    method="POST",
-                )
-                with urllib.request.urlopen(req) as resp:
-                    resp_data = json.loads(resp.read().decode())
-                    inserted += len(rows)
-                    print(f"    ✅ {min(i + batch_size, total)}/{total} (返回: {resp_data})")
+                cur.execute(sql, params)
+                conn.commit()
+                inserted += len(batch)
                 break
             except Exception as e:
-                body = ""
-                try:
-                    if hasattr(e, 'read'): body = e.read().decode()[:200]
-                except: pass
                 if attempt == 2:
-                    print(f"    ❌ 批次写入失败: {e} {body}")
+                    print(f"    ❌ 批次写入失败: {e}")
                 else:
-                    print(f"    ⚠️  重试 {attempt + 1}/3: {e}")
+                    conn.rollback()
                     time.sleep(2)
 
+        print(f"    ✅ {min(i + batch_size, total)}/{total}")
+
+    cur.close()
+    conn.close()
     print(f"  ✅ 成功写入 {inserted} 个文档")
     return inserted

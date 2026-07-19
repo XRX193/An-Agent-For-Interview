@@ -2,6 +2,7 @@
 # 安装：pip install -r requirements.txt
 
 # ===== 核心依赖 =====
+psycopg2-binary>=2.9   # PostgreSQL 直连
 openai>=1.0.0          # Embedding API（text-embedding-3-small）
 supabase>=2.0.0        # 向量数据库客户端
 PyGithub>=2.0.0        # GitHub API 封装

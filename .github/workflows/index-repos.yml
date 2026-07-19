@@ -53,6 +53,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           GITHUB_USERNAME: ${{ vars.GITHUB_USERNAME || 'XRX193' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
