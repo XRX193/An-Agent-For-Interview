@@ -31,11 +31,26 @@ export interface Project {
   lastUpdated: string
 }
 
+/** Worker 环境变量 */
+export interface WorkerEnv {
+  DEEPSEEK_API_KEY: string
+  DEEPSEEK_MODEL?: string
+  SUPABASE_URL: string
+  SUPABASE_ANON_KEY: string
+  OPENAI_API_KEY?: string
+  EMBEDDING_PROVIDER?: string
+  CANDIDATE_NAME?: string
+  CANDIDATE_TITLE?: string
+  GITHUB_USERNAME?: string
+  AGENT_LANGUAGE?: string
+}
+
 /** POST /api/chat 请求体 */
 export interface ChatRequest {
   question: string
   history: Array<{ role: MessageRole; content: string }>
   scope?: string
+  env: WorkerEnv
 }
 
 /** SSE 事件 */
