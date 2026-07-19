@@ -24,7 +24,10 @@ def upsert_chunks(
         return len(chunks)
 
     # 从 Supabase URL 提取 project_id，构建直连地址
-    project_id = config.supabase_url.replace("https://", "").replace(".supabase.co", "")
+    from urllib.parse import urlparse
+    parsed = urlparse(config.supabase_url)
+    hostname = parsed.hostname  # xxxxx.supabase.co
+    project_id = hostname.replace(".supabase.co", "") if hostname else ""
     db_host = f"db.{project_id}.supabase.co"
     db_user = "postgres"
     db_name = "postgres"
