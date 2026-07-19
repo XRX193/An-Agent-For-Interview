@@ -1,3 +1,7 @@
+/**
+ * 文件引用标签 — 圆角药丸样式链接到 GitHub 源文件
+ * 显示仓库名/文件名:行号，点击新窗口打开
+ */
 import type { FileRef } from '../types'
 
 interface FileReferenceProps {

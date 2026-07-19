@@ -1,3 +1,8 @@
+/**
+ * useProjects — 项目列表 Hook
+ *
+ * 获取已索引项目列表，支持关键词搜索（按项目名/描述/技术栈匹配）
+ */
 import { useCallback, useEffect, useState } from 'react'
 import type { Project } from '../types'
 import { fetchProjects } from '../lib/api'

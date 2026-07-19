@@ -1,3 +1,7 @@
+/**
+ * 消息列表 — 渲染完整对话历史
+ * 空状态时显示引导文案，有消息时逐条渲染 MessageBubble
+ */
 import type { Message } from '../types'
 import MessageBubble from './MessageBubble'
 

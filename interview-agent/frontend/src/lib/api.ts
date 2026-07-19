@@ -1,3 +1,10 @@
+/**
+ * API 客户端 — 封装后端 HTTP 请求
+ *
+ * 提供 sendChat（非流式）、sendChatStream（SSE 流式）、
+ * fetchProjects、healthCheck 四个接口方法
+ * 开发环境通过 Vite 代理转发，生产环境直连 Cloudflare Worker
+ */
 import type { ChatRequest, Project } from '../types'
 
 /** API 基础 URL —— 生产环境指向 Cloudflare Worker，开发环境指向本地代理 */

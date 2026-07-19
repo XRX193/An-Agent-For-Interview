@@ -1,3 +1,9 @@
+/**
+ * 类型定义 — 面试 Agent 全局类型
+ *
+ * 涵盖消息（Message）、文件引用（FileRef）、检索片段（Chunk）、
+ * 项目（Project）、SSE 事件（ChatEvent）、对话状态（ConversationState）
+ */
 /** 消息角色 */
 export type MessageRole = 'user' | 'assistant' | 'system'
 

@@ -12,6 +12,10 @@ worker/dist/
 
 # ===== 索引器临时文件 =====
 indexer/_clones/
+indexer/repos.json
+
+# ===== Claude Code =====
+.claude/
 
 # ===== IDE =====
 .idea/

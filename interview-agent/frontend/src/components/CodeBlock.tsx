@@ -1,3 +1,7 @@
+/**
+ * 代码块 — Prism.js 语法高亮 + 一键复制 + GitHub 文件链接
+ * 支持 JS/TS/Python/Java/C#/JSON/Bash/SQL 高亮
+ */
 import { useEffect, useRef, useState } from 'react'
 import Prism from 'prismjs'
 import 'prismjs/components/prism-javascript'

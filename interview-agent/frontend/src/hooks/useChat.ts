@@ -1,3 +1,9 @@
+/**
+ * useChat — 对话核心 Hook
+ *
+ * 管理消息列表状态 + SSE 流式接收 + 发送/清空/重试操作
+ * 维护 AbortController 生命周期，支持流中断和错误恢复
+ */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatRequest, ConversationState, FileRef, Message } from '../types'
 

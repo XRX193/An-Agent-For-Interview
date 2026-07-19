@@ -1,3 +1,9 @@
+/**
+ * App 根组件 — 面试助手主界面
+ *
+ * 布局：左侧项目侧边栏 + 中央对话区 + 右侧检索上下文面板
+ * 交互：@项目名 限定检索范围，SSE 流式回答，代码文件引用
+ */
 import { useCallback, useState } from 'react'
 import Header from './components/Header'
 import ChatArea from './components/ChatArea'

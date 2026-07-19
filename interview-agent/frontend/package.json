@@ -1,7 +1,8 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.2.0",
+  "description": "技术面试助手前端 — 基于 React + TypeScript + Vite 的 AI 面试对话界面",
   "type": "module",
   "scripts": {
     "dev": "vite",

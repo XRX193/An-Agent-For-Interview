@@ -1,3 +1,9 @@
+/**
+ * 检索上下文面板 — 浮动侧面板展示代码检索结果
+ *
+ * 显示每个 Chunk 的层级标签（项目/架构/代码/历史）、仓库路径、
+ * 相关性分数、代码预览（最多 300 字符）
+ */
 import type { Chunk } from '../types'
 
 interface ContextPanelProps {

@@ -1,3 +1,9 @@
+/**
+ * 项目列表 — 侧边栏已索引项目展示
+ *
+ * 显示项目名、描述、语言色点、Star 数、技术栈标签
+ * 支持选中高亮（蓝色左边框），用于 @项目名 限定检索
+ */
 import type { Project } from '../types'
 
 interface ProjectListProps {

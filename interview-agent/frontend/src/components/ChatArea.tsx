@@ -1,3 +1,7 @@
+/**
+ * 对话区域容器 — 消息列表 + 输入栏 + 错误提示
+ * 组合 MessageList / InputBar / TypingIndicator，管理整体对话布局
+ */
 import type { ReactNode } from 'react'
 import MessageList from './MessageList'
 import InputBar from './InputBar'

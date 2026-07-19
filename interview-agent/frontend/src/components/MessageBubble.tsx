@@ -1,3 +1,9 @@
+/**
+ * 消息气泡 — 渲染单条对话消息
+ *
+ * 支持 Markdown（含 GFM 表格）、代码高亮（Prism.js）、文件引用链接
+ * 用户消息蓝色靠右，AI 消息白色靠左，流式生成时显示闪烁光标
+ */
 import { type ComponentPropsWithoutRef, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'

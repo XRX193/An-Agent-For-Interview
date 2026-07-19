@@ -1,3 +1,6 @@
+/**
+ * 顶部导航栏 — 显示候选人信息、索引状态、清空对话按钮
+ */
 interface HeaderProps {
   candidateName?: string
   lastIndexedAt?: string

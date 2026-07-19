@@ -1,3 +1,9 @@
+/**
+ * 输入栏 — 底部消息输入区域
+ *
+ * 支持 Enter 发送 / Shift+Enter 换行，自适应高度（最大 150px）
+ * 生成中显示加载动画并禁用输入
+ */
 import { useRef, type KeyboardEvent } from 'react'
 
 interface InputBarProps {
