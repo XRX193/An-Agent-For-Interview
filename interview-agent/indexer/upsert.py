@@ -49,33 +49,26 @@ def upsert_chunks(
 
     conn = None
     try:
+        # 解析 IPv4 地址（避免 GitHub Actions IPv6 不可达问题）
+        import socket
+        addrs = socket.getaddrinfo(db_host, 6543, socket.AF_INET, socket.SOCK_STREAM)
+        host_addr = addrs[0][4][0]
+        print(f"  🌐 解析 IPv4: {host_addr}")
+
         conn = psycopg2.connect(
-            host=db_host,
-            port=6543,  # Supabase 连接池端口
+            host=host_addr,
+            port=6543,
             dbname=db_name,
             user=db_user,
             password=db_password,
             sslmode="require",
-            connect_timeout=10,
+            connect_timeout=30,
         )
         print("  ✅ PostgreSQL 连接成功")
     except Exception as e:
-        print(f"  ⚠️  连接池端口失败: {e}")
-        try:
-            conn = psycopg2.connect(
-                host=db_host,
-                port=5432,
-                dbname=db_name,
-                user=db_user,
-                password=db_password,
-                sslmode="require",
-                connect_timeout=10,
-            )
-            print("  ✅ PostgreSQL 直连成功 (5432)")
-        except Exception as e2:
-            print(f"  ❌ PostgreSQL 连接失败: {e2}")
-            print(f"  💡 请检查 SUPABASE_DB_PASSWORD 是否正确")
-            return 0
+        print(f"  ❌ PostgreSQL 连接失败: {e}")
+        print(f"  💡 请检查 SUPABASE_DB_PASSWORD 是否正确")
+        return 0
 
     cur = conn.cursor()
     inserted = 0
