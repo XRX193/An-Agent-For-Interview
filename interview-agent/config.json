@@ -1,0 +1,32 @@
+{
+  "github_username": "Rcardo",
+  "agent_name": "技术面试助手",
+  "agent_description": "基于我的 GitHub 开源项目，回答技术面试问题",
+  "language": "zh-CN",
+  "repos": {
+    "mode": "all_public",
+    "exclude": ["dotfiles", "tutorial-project"],
+    "include": []
+  },
+  "model": {
+    "provider": "deepseek",
+    "primary": "deepseek-chat",
+    "fallback": "deepseek-chat"
+  },
+  "embedding": {
+    "provider": "none",
+    "note": "DeepSeek 无 Embedding API，使用关键词检索。可选配 OPENAI_API_KEY 开启向量检索。"
+  },
+  "ui": {
+    "primary_color": "#1a1a2e",
+    "accent_color": "#0f3460",
+    "candidate_name": "向荣鑫",
+    "candidate_title": "软件工程师"
+  },
+  "limits": {
+    "max_history_rounds": 10,
+    "rate_limit_per_minute": 20,
+    "max_question_length": 2000,
+    "retrieve_top_k": 5
+  }
+}

@@ -1,0 +1,19 @@
+# 仓库索引器依赖
+# 安装：pip install -r requirements.txt
+
+# ===== 核心依赖 =====
+openai>=1.0.0          # Embedding API（text-embedding-3-small）
+supabase>=2.0.0        # 向量数据库客户端
+PyGithub>=2.0.0        # GitHub API 封装
+
+# ===== 代码分块 =====
+# 注意：tree-sitter 需要额外安装语言包
+tree-sitter>=0.21.0
+# 可选的语言包：
+# pip install tree-sitter-python tree-sitter-javascript tree-sitter-typescript tree-sitter-java
+
+# ===== 工具 =====
+python-dotenv>=1.0.0   # .env 文件加载
+rich>=13.0.0           # 终端 UI 美化
+click>=8.0.0           # CLI 参数解析
+httpx>=0.27.0          # HTTP 客户端（异步支持）
