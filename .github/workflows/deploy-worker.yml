@@ -11,7 +11,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: ./worker
+        working-directory: ./interview-agent/worker
 
     steps:
       - name: Checkout
@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: worker/package-lock.json
+          cache-dependency-path: interview-agent/worker/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -35,7 +35,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: './worker'
+          workingDirectory: './interview-agent/worker'
           secrets: |
             DEEPSEEK_API_KEY
             SUPABASE_URL
