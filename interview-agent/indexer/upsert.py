@@ -177,6 +177,20 @@ def upsert_chunks(
         return len(chunks)
 
     client = create_client(config.supabase_url, config.supabase_key)
+
+    # 诊断：打印连接信息（隐藏敏感部分）
+    masked_url = config.supabase_url[:25] + '***' if len(config.supabase_url) > 25 else '***'
+    print(f"  🔗 Supabase: {masked_url}")
+    print(f"  🔑 Key 长度: {len(config.supabase_key)} 字符")
+
+    # 测试连接
+    try:
+        test = client.table("documents").select("id", count="exact").limit(1).execute()
+        print(f"  ✅ 连接成功，documents 表当前有 {test.count} 条记录")
+    except Exception as e:
+        print(f"  ❌ 连接测试失败: {e}")
+        print(f"  💡 请检查：1) Supabase URL 是否正确  2) anon key 是否有效  3) documents 表是否存在")
+
     total = len(chunks)
     inserted = 0
 
