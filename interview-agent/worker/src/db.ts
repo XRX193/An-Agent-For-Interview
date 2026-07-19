@@ -1,56 +1,99 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Document, Project } from './types'
 
-const clients = new Map<string, SupabaseClient>()
-
-function getClient(url: string, key: string): SupabaseClient {
-  const k = `${url}::${key.slice(0, 10)}`
-  if (clients.has(k)) return clients.get(k)!
-  const c = createClient(url, key, { auth: { persistSession: false } })
-  clients.set(k, c)
-  return c
+interface IndexEntry {
+  repo: string
+  path: string
+  content: string
+  level: string
+  language: string
 }
 
-export async function searchSimilarDocs(embedding: number[], options: { limit?: number; matchThreshold?: number; scope?: string; url: string; key: string }): Promise<Document[]> {
-  const { limit = 5, matchThreshold = 0.5, scope } = options
-  const db = getClient(options.url, options.key)
-  let q = db.rpc('match_documents', { query_embedding: embedding, match_threshold: matchThreshold, match_count: limit })
-  if (scope) q = q.filter('repo', 'eq', scope)
-  const { data, error } = await q
-  if (error) { console.error('[db] Vector search error:', error); return [] }
-  return (data as unknown as Document[]) ?? []
-}
+let cachedIndex: IndexEntry[] | null = null
+let cacheTime = 0
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
-export async function searchByKeywords(query: string, options: { limit?: number; scope?: string; url: string; key: string }): Promise<Document[]> {
-  const { limit = 5, scope } = options
-  const db = getClient(options.url, options.key)
-  const keywords = query.replace(/[?？,，。.！!、\s]+/g, ' ').trim().split(' ').filter(k => k.length > 0)
-  if (!keywords.length) return []
+/** 从 GitHub raw 加载 search_index.json */
+async function loadIndex(githubUser: string): Promise<IndexEntry[]> {
+  const now = Date.now()
+  if (cachedIndex && (now - cacheTime) < CACHE_TTL) return cachedIndex
 
-  let dbQuery = db.from('documents').select('id, repo, path, content, level, language, metadata')
-  for (const kw of keywords.slice(0, 5)) {
-    dbQuery = dbQuery.or(`content.ilike.%${kw}%,path.ilike.%${kw}%`)
+  try {
+    const url = `https://raw.githubusercontent.com/${githubUser}/An-Agent-For-Interview/main/interview-agent/search_index.json`
+    const resp = await fetch(url, { cf: { cacheTtl: 300 } })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const data = await resp.json() as { repos?: string[]; total_chunks?: number; chunks?: IndexEntry[] }
+    cachedIndex = data.chunks ?? []
+    cacheTime = now
+    return cachedIndex!
+  } catch (e) {
+    console.error('[db] Failed to load index:', e)
+    return cachedIndex ?? []
   }
-  if (scope) dbQuery = dbQuery.eq('repo', scope)
-
-  const { data, error } = await dbQuery.limit(limit * 2)
-  if (error) { console.error('[db] Keyword search error:', error); return [] }
-  const docs = (data as unknown as Document[]) ?? []
-  const order: Record<string, number> = { project: 0, architecture: 1, code: 2, history: 3 }
-  docs.sort((a, b) => (order[a.level] ?? 2) - (order[b.level] ?? 2))
-  return docs.slice(0, limit)
 }
 
-export async function listProjects(supabaseUrl: string, supabaseKey: string): Promise<Project[]> {
-  const db = getClient(supabaseUrl, supabaseKey)
-  const { data, error } = await db.rpc('list_projects')
-  if (error) { console.error('[db] List projects error:', error); return [] }
-  return (data as unknown as Project[]) ?? []
+const DEFAULT_USER = 'XRX193'
+
+export async function searchByKeywords(
+  query: string,
+  options: { limit?: number; scope?: string; url: string; key: string; githubUser: string },
+): Promise<Document[]> {
+  const githubUser = options.githubUser || DEFAULT_USER
+  const docs = await loadIndex(githubUser)
+  if (!docs.length) return []
+
+  const keywords = query.replace(/[?？,，。.！!、\s]+/g, ' ').trim().split(' ').filter(k => k.length > 1)
+
+  let results = docs
+  if (options.scope) results = results.filter(d => d.repo === options.scope)
+
+  // 关键词匹配打分
+  const scored = results.map(d => {
+    let score = 0
+    const text = (d.content + ' ' + d.path + ' ' + d.repo).toLowerCase()
+    const levelBonus: Record<string, number> = { project: 5, architecture: 3, code: 1, history: 2 }
+    score += levelBonus[d.level] ?? 0
+    for (const kw of keywords) {
+      const count = (text.match(new RegExp(kw.toLowerCase(), 'g')) || []).length
+      score += count * 2
+    }
+    if (keywords.length === 0) score = levelBonus[d.level] ?? 0
+    return { ...d, score }
+  }).filter(d => d.score > 0)
+
+  scored.sort((a, b) => b.score - a.score)
+  return scored.slice(0, options.limit ?? 5) as unknown as Document[]
 }
 
-export async function getIndexStats(supabaseUrl: string, supabaseKey: string): Promise<{ totalDocs: number; totalRepos: number; lastIndexedAt: string | null }> {
-  const db = getClient(supabaseUrl, supabaseKey)
-  const { data, error } = await db.rpc('index_stats')
-  if (error) { console.error('[db] Index stats error:', error); return { totalDocs: 0, totalRepos: 0, lastIndexedAt: null } }
-  return data as unknown as { totalDocs: number; totalRepos: number; lastIndexedAt: string | null }
+export async function searchSimilarDocs(
+  embedding: number[],
+  options: { limit?: number; matchThreshold?: number; scope?: string; url: string; key: string; githubUser: string },
+): Promise<Document[]> {
+  // 无 Embedding 时用关键词降级
+  return []
+}
+
+export async function listProjects(_url: string, _key: string, githubUser: string = DEFAULT_USER): Promise<Project[]> {
+  const docs = await loadIndex(githubUser)
+  const seen = new Set<string>()
+  const projects: Project[] = []
+  for (const d of docs) {
+    if (seen.has(d.repo)) continue
+    seen.add(d.repo)
+    projects.push({
+      name: d.repo,
+      description: '',
+      language: d.language || '',
+      stars: 0,
+      url: `https://github.com/${githubUser}/${d.repo}`,
+      topics: [],
+      lastUpdated: '',
+    })
+  }
+  return projects
+}
+
+export async function getIndexStats(_url: string, _key: string, githubUser: string = DEFAULT_USER) {
+  const docs = await loadIndex(githubUser)
+  const repos = new Set(docs.map(d => d.repo)).size
+  return { totalDocs: docs.length, totalRepos: repos, lastIndexedAt: null }
 }

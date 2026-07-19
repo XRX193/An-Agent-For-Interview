@@ -48,7 +48,7 @@ export default {
     // GET /api/health
     if (request.method === 'GET' && path === '/api/health') {
       try {
-        const stats = await getIndexStats(env.SUPABASE_URL, env.SUPABASE_ANON_KEY)
+        const stats = await getIndexStats(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, env.GITHUB_USERNAME ?? 'XRX193')
         return json({ ok: true, ...stats })
       } catch {
         return json({ ok: true, lastIndexedAt: null })
@@ -58,7 +58,7 @@ export default {
     // GET /api/projects
     if (request.method === 'GET' && path === '/api/projects') {
       try {
-        const projects = await listProjects(env.SUPABASE_URL, env.SUPABASE_ANON_KEY)
+        const projects = await listProjects(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, env.GITHUB_USERNAME ?? 'XRX193')
         return json(projects)
       } catch {
         return json([])
