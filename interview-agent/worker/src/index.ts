@@ -40,6 +40,11 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders() })
     }
 
+    // DEBUG: echo request info
+    if (path === '/api/debug') {
+      return json({ method: request.method, path, url: request.url })
+    }
+
     // GET /api/health
     if (request.method === 'GET' && path === '/api/health') {
       try {
@@ -60,8 +65,8 @@ export default {
       }
     }
 
-    // POST /api/chat
-    if (request.method === 'POST' && path === '/api/chat') {
+    // POST /api/chat 或 /chat
+    if (request.method === 'POST' && (path === '/api/chat' || path === '/chat')) {
       const clientIp = extractClientIP(request)
       if (!checkRateLimit(clientIp)) {
         return json({ error: '请求过于频繁' }, 429)
