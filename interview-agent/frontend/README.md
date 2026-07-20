@@ -2,11 +2,11 @@
 
 > 🤖 面试 Agent 的前端界面 —— 基于 React 19 + TypeScript + Vite + Tailwind CSS 4
 
-[![Deploy Frontend](https://github.com/RcardoFate/interview-agent/actions/workflows/deploy-frontend.yml/badge.svg)](https://github.com/RcardoFate/interview-agent/actions/workflows/deploy-frontend.yml)
+[![Deploy Frontend](https://github.com/XRX193/An-Agent-For-Interview/actions/workflows/deploy-frontend.yml/badge.svg)](https://github.com/XRX193/An-Agent-For-Interview/actions/workflows/deploy-frontend.yml)
 
 ## 概述
 
-本前端是 [Interview Agent](../README.md) 项目的 Web 界面层，为面试官提供 AI 驱动的技术面试辅助对话体验。Agent 会基于候选人的 GitHub 开源项目代码，生成专业、诚实的回答，并引用具体文件路径和代码行作为佐证。
+本前端是 Interview Agent 项目的 Web 界面层，为面试官提供 AI 驱动的技术面试辅助对话体验。Agent 会基于候选人的 GitHub 开源项目代码，生成专业、诚实的回答，并引用具体文件路径和代码行作为佐证。
 
 ## 功能
 
@@ -178,14 +178,6 @@ Prism.js 需要手动导入语言包。检查 `CodeBlock.tsx` 中是否已引入
 
 确保 Vite 版本 ≥ 5，React 插件版本匹配。尝试清除 `node_modules/.vite` 缓存后重启。
 
-## 相关文档
-
-- [Interview Agent 主项目](../README.md) — 项目整体介绍与架构
-- [部署架构](../README.md#项目结构) — 前后端 + 索引完整架构
-- [Worker 后端](../worker/README.md) — API 实现细节
-- [索引服务](../indexer/README.md) — 代码索引与向量检索
-- [新手操作指南](../傻瓜操作指南.md) — 从零搭建完整项目
-
 ## License
 
-MIT © [Rcardo](https://github.com/RcardoFate)
+MIT © [XRX193](https://github.com/XRX193)

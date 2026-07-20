@@ -39,5 +39,9 @@ desktop.ini
 *.log
 wrangler-*.log
 
+# ===== 文档（仅保留 frontend/README.md） =====
+*.md
+!frontend/README.md
+
 # ===== TypeScript =====
 *.tsbuildinfo
