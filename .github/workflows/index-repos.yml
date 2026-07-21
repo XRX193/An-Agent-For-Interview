@@ -1,6 +1,12 @@
 name: Index GitHub Repositories
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'interview-agent/config.json'
+      - 'interview-agent/indexer/**'
+      - '.github/workflows/index-repos.yml'
   schedule:
     # 每周日凌晨 2:00 UTC（北京时间上午 10:00）
     - cron: '0 2 * * 0'
@@ -10,7 +16,7 @@ on:
         description: '索引模式'
         required: true
         type: choice
-        default: 'full'
+        default: 'incremental'
         options:
           - full
           - incremental
@@ -21,6 +27,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: repository-index
+  cancel-in-progress: false
 
 jobs:
   index:
@@ -35,17 +45,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-          cache: 'pip'
-          cache-dependency-path: interview-agent/indexer/requirements.txt
 
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r interview-agent/indexer/requirements.txt
+      - name: Test indexer
+        run: python -m unittest discover -s interview-agent/indexer/tests -v
 
       - name: Run indexer
         run: |
-          MODE="${{ github.event.inputs.mode || 'full' }}"
+          MODE="${{ github.event.inputs.mode || 'incremental' }}"
           REPO_ARG="${{ github.event.inputs.repo }}"
 
           if [ -n "$REPO_ARG" ]; then
@@ -54,23 +60,16 @@ jobs:
             python interview-agent/indexer/run.py --${MODE}
           fi
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          GITHUB_USERNAME: ${{ vars.GITHUB_USERNAME || 'XRX193' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Commit search index
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -f interview-agent/search_index.json ]; then
+          if ! git diff --quiet -- interview-agent/search_index.json; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add interview-agent/search_index.json
-            git commit -m "chore: 更新搜索索引" || true
-            git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/XRX193/An-Agent-For-Interview.git
-            git push origin main
+            git commit -m "chore: 更新搜索索引"
+            git push origin HEAD:main
           fi
 
       - name: Summary
@@ -78,7 +77,7 @@ jobs:
         run: |
           echo "## 📊 索引运行结果" >> $GITHUB_STEP_SUMMARY
           echo "- 触发方式：${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- 索引模式：${{ github.event.inputs.mode || 'full (定时)' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 索引模式：${{ github.event.inputs.mode || 'incremental (定时)' }}" >> $GITHUB_STEP_SUMMARY
           echo "- 运行时间：$(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> 💡 检查 [Supabase Dashboard](https://supabase.com/dashboard) 确认向量数据是否已更新。" >> $GITHUB_STEP_SUMMARY
+          echo "> 检查仓库中的 search_index.json 确认索引是否已更新。" >> $GITHUB_STEP_SUMMARY

@@ -9,9 +9,6 @@ ENVIRONMENT = "production"
 
 # ===== 敏感变量通过 wrangler secret put 设置，或通过 GitHub Actions: =====
 # DEEPSEEK_API_KEY    (必需，DeepSeek API 密钥)
-# SUPABASE_URL        (必需，Supabase 项目 URL)
-# SUPABASE_ANON_KEY   (必需，Supabase 匿名密钥)
-# OPENAI_API_KEY      (可选，用于 Embedding 向量检索)
 
 # ===== 路由（绑定自定义域名后启用） =====
 # routes = [

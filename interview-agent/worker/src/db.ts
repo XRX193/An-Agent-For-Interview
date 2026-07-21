@@ -1,99 +1,179 @@
-import type { Document, Project } from './types'
+import type { Document, Project, WorkerEnv } from './types'
+import config from './config'
 
 interface IndexEntry {
+  id?: string
   repo: string
   path: string
   content: string
-  level: string
+  level: Document['level']
   language: string
+  start_line?: number
+  end_line?: number
+  metadata?: Record<string, unknown>
 }
 
-let cachedIndex: IndexEntry[] | null = null
-let cacheTime = 0
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+interface SearchIndex {
+  generated_at?: string
+  chunks: IndexEntry[]
+}
 
-/** 从 GitHub raw 加载 search_index.json */
-async function loadIndex(githubUser: string): Promise<IndexEntry[]> {
-  const now = Date.now()
-  if (cachedIndex && (now - cacheTime) < CACHE_TTL) return cachedIndex
+interface IndexSource {
+  owner: string
+  repository: string
+  branch: string
+}
 
-  try {
-    const url = `https://raw.githubusercontent.com/${githubUser}/An-Agent-For-Interview/main/interview-agent/search_index.json`
-    const resp = await fetch(url, { cf: { cacheTtl: 300 } })
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const data = await resp.json() as { repos?: string[]; total_chunks?: number; chunks?: IndexEntry[] }
-    cachedIndex = data.chunks ?? []
-    cacheTime = now
-    return cachedIndex!
-  } catch (e) {
-    console.error('[db] Failed to load index:', e)
-    return cachedIndex ?? []
+interface CacheEntry {
+  data: SearchIndex
+  cachedAt: number
+}
+
+const indexCache = new Map<string, CacheEntry>()
+const CACHE_TTL = 5 * 60 * 1000
+
+function indexSource(env: WorkerEnv): IndexSource {
+  return {
+    owner: env.INDEX_REPO_OWNER ?? config.index_storage.repository_owner,
+    repository: env.INDEX_REPO_NAME ?? config.index_storage.repository_name,
+    branch: env.INDEX_REPO_BRANCH ?? config.index_storage.branch,
   }
 }
 
-const DEFAULT_USER = 'XRX193'
+async function loadIndex(env: WorkerEnv): Promise<SearchIndex> {
+  const source = indexSource(env)
+  const url = `https://raw.githubusercontent.com/${source.owner}/${source.repository}/${source.branch}/interview-agent/search_index.json`
+  const now = Date.now()
+  const cached = indexCache.get(url)
+  if (cached && now - cached.cachedAt < CACHE_TTL) return cached.data
+
+  try {
+    const response = await fetch(url, { cf: { cacheTtl: 300 } })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const value = await response.json() as Partial<SearchIndex>
+    if (!Array.isArray(value.chunks)) throw new Error('Invalid search index')
+    const data: SearchIndex = { generated_at: value.generated_at, chunks: value.chunks }
+    indexCache.set(url, { data, cachedAt: now })
+    return data
+  } catch (error) {
+    if (cached) return cached.data
+    throw error
+  }
+}
+
+/** 将中文连续文本拆成二元词组，同时保留英文和技术标识符。 */
+export function tokenizeQuery(query: string): string[] {
+  const normalized = query.toLowerCase()
+  const tokens = new Set<string>()
+
+  for (const match of normalized.matchAll(/[a-z0-9][a-z0-9_.+#-]*/g)) {
+    if (match[0].length > 1) tokens.add(match[0])
+  }
+  for (const match of normalized.matchAll(/[\p{Script=Han}]+/gu)) {
+    const text = match[0]
+    if (text.length <= 4) tokens.add(text)
+    for (let index = 0; index < text.length - 1; index++) {
+      tokens.add(text.slice(index, index + 2))
+    }
+  }
+
+  return [...tokens]
+}
+
+function countOccurrences(text: string, token: string): number {
+  let count = 0
+  let offset = 0
+  while ((offset = text.indexOf(token, offset)) !== -1) {
+    count++
+    offset += token.length
+  }
+  return count
+}
+
+function fallbackId(entry: IndexEntry): string {
+  return `${entry.repo}:${entry.path}:${entry.start_line ?? 0}:${entry.end_line ?? 0}`
+}
+
+function toDocument(entry: IndexEntry, score: number): Document {
+  return {
+    id: entry.id ?? fallbackId(entry),
+    repo: entry.repo,
+    path: entry.path,
+    content: entry.content,
+    embedding: [],
+    level: entry.level,
+    language: entry.language,
+    score,
+    startLine: entry.start_line,
+    endLine: entry.end_line,
+    defaultBranch: typeof entry.metadata?.default_branch === 'string'
+      ? entry.metadata.default_branch
+      : 'main',
+    metadata: entry.metadata ?? {},
+  }
+}
 
 export async function searchByKeywords(
   query: string,
-  options: { limit?: number; scope?: string; url: string; key: string; githubUser: string },
+  env: WorkerEnv,
+  options: { limit?: number; scope?: string } = {},
 ): Promise<Document[]> {
-  const githubUser = options.githubUser || DEFAULT_USER
-  const docs = await loadIndex(githubUser)
-  if (!docs.length) return []
+  const { chunks } = await loadIndex(env)
+  const tokens = tokenizeQuery(query)
+  const candidates = options.scope ? chunks.filter((entry) => entry.repo === options.scope) : chunks
+  const levelBonus: Record<string, number> = { project: 0.5, architecture: 0.35, code: 0.25, history: 0.15 }
 
-  const keywords = query.replace(/[?？,，。.！!、\s]+/g, ' ').trim().split(' ').filter(k => k.length > 1)
+  const scored = candidates.flatMap((entry) => {
+    const content = entry.content.toLowerCase()
+    const path = entry.path.toLowerCase()
+    const repo = entry.repo.toLowerCase()
+    let keywordScore = 0
 
-  let results = docs
-  if (options.scope) results = results.filter(d => d.repo === options.scope)
-
-  // 关键词匹配打分
-  const scored = results.map(d => {
-    let score = 0
-    const text = (d.content + ' ' + d.path + ' ' + d.repo).toLowerCase()
-    const levelBonus: Record<string, number> = { project: 5, architecture: 3, code: 1, history: 2 }
-    score += levelBonus[d.level] ?? 0
-    for (const kw of keywords) {
-      const count = (text.match(new RegExp(kw.toLowerCase(), 'g')) || []).length
-      score += count * 2
+    for (const token of tokens) {
+      keywordScore += Math.min(countOccurrences(content, token), 8)
+      if (path.includes(token)) keywordScore += 3
+      if (repo.includes(token)) keywordScore += 5
     }
-    if (keywords.length === 0) score = levelBonus[d.level] ?? 0
-    return { ...d, score }
-  }).filter(d => d.score > 0)
+    if (tokens.length > 0 && keywordScore === 0) return []
 
-  scored.sort((a, b) => b.score - a.score)
-  return scored.slice(0, options.limit ?? 5) as unknown as Document[]
+    return [{ entry, rawScore: keywordScore + (levelBonus[entry.level] ?? 0) }]
+  })
+
+  scored.sort((left, right) => right.rawScore - left.rawScore)
+  const topScore = scored[0]?.rawScore ?? 1
+  return scored
+    .slice(0, options.limit ?? 5)
+    .map(({ entry, rawScore }) => toDocument(entry, rawScore / topScore))
 }
 
-export async function searchSimilarDocs(
-  embedding: number[],
-  options: { limit?: number; matchThreshold?: number; scope?: string; url: string; key: string; githubUser: string },
-): Promise<Document[]> {
-  // 无 Embedding 时用关键词降级
-  return []
+function metadataValue<T>(entry: IndexEntry, key: string, fallback: T): T {
+  const value = entry.metadata?.[key]
+  return (value === undefined || value === null ? fallback : value) as T
 }
 
-export async function listProjects(_url: string, _key: string, githubUser: string = DEFAULT_USER): Promise<Project[]> {
-  const docs = await loadIndex(githubUser)
-  const seen = new Set<string>()
-  const projects: Project[] = []
-  for (const d of docs) {
-    if (seen.has(d.repo)) continue
-    seen.add(d.repo)
-    projects.push({
-      name: d.repo,
-      description: '',
-      language: d.language || '',
-      stars: 0,
-      url: `https://github.com/${githubUser}/${d.repo}`,
-      topics: [],
-      lastUpdated: '',
-    })
+export async function listProjects(env: WorkerEnv): Promise<Project[]> {
+  const { chunks } = await loadIndex(env)
+  const githubUser = env.GITHUB_USERNAME ?? config.github_username
+  const entries = chunks.filter((entry) => entry.path === '__meta__')
+
+  return entries.map((entry) => ({
+    name: entry.repo,
+    description: metadataValue(entry, 'description', ''),
+    language: metadataValue(entry, 'primary_language', entry.language || ''),
+    stars: metadataValue(entry, 'stars', 0),
+    url: metadataValue(entry, 'html_url', `https://github.com/${githubUser}/${entry.repo}`),
+    topics: metadataValue(entry, 'topics', []),
+    lastUpdated: metadataValue(entry, 'updated_at', ''),
+    defaultBranch: metadataValue(entry, 'default_branch', 'main'),
+  }))
+}
+
+export async function getIndexStats(env: WorkerEnv) {
+  const index = await loadIndex(env)
+  const repos = new Set(index.chunks.map((entry) => entry.repo)).size
+  return {
+    totalDocs: index.chunks.length,
+    totalRepos: repos,
+    lastIndexedAt: index.generated_at ?? null,
   }
-  return projects
-}
-
-export async function getIndexStats(_url: string, _key: string, githubUser: string = DEFAULT_USER) {
-  const docs = await loadIndex(githubUser)
-  const repos = new Set(docs.map(d => d.repo)).size
-  return { totalDocs: docs.length, totalRepos: repos, lastIndexedAt: null }
 }

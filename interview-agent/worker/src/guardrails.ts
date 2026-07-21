@@ -13,6 +13,7 @@ interface RateLimitEntry {
 }
 
 const rateLimitStore = new Map<string, RateLimitEntry>()
+let lastCleanupAt = 0
 
 /** 速率限制配置 */
 const RATE_LIMIT = {
@@ -26,7 +27,7 @@ const RATE_LIMIT = {
  * 检查请求是否超过速率限制
  * @returns 如果允许通过则返回 true，否则返回 false
  */
-export function checkRateLimit(clientIp: string): boolean {
+export function checkRateLimit(clientIp: string, maxRequests = RATE_LIMIT.maxRequests): boolean {
   const now = Date.now()
   lazyCleanup(now)
   const entry = rateLimitStore.get(clientIp)
@@ -36,7 +37,7 @@ export function checkRateLimit(clientIp: string): boolean {
     return true
   }
 
-  if (entry.count >= RATE_LIMIT.maxRequests) {
+  if (entry.count >= maxRequests) {
     return false
   }
 
@@ -53,6 +54,8 @@ export function getRateLimitRemaining(clientIp: string): number {
 
 /** 惰性清理过期条目（在每次 checkRateLimit 时顺便做） */
 function lazyCleanup(now: number): void {
+  if (now - lastCleanupAt < RATE_LIMIT.windowMs) return
+  lastCleanupAt = now
   for (const [key, entry] of rateLimitStore) {
     if (now > entry.resetAt) {
       rateLimitStore.delete(key)
@@ -121,9 +124,6 @@ export function extractClientIP(request: Request): string {
   // Cloudflare Workers 中从 CF-Connecting-IP 头获取真实 IP
   const cfIP = request.headers.get('CF-Connecting-IP')
   if (cfIP) return cfIP
-
-  const forwarded = request.headers.get('X-Forwarded-For')
-  if (forwarded) return forwarded.split(',')[0].trim()
 
   return 'unknown'
 }

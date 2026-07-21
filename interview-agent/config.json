@@ -13,9 +13,10 @@
     "primary": "deepseek-chat",
     "fallback": "deepseek-chat"
   },
-  "embedding": {
-    "provider": "none",
-    "note": "DeepSeek 无 Embedding API，使用关键词检索。可选配 OPENAI_API_KEY 开启向量检索。"
+  "index_storage": {
+    "repository_owner": "XRX193",
+    "repository_name": "An-Agent-For-Interview",
+    "branch": "main"
   },
   "ui": {
     "primary_color": "#1a1a2e",
@@ -28,5 +29,12 @@
     "rate_limit_per_minute": 20,
     "max_question_length": 2000,
     "retrieve_top_k": 5
+  },
+  "security": {
+    "allowed_origins": [
+      "https://xrx193.github.io",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173"
+    ]
   }
 }

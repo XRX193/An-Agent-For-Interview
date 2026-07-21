@@ -16,6 +16,7 @@
 
 import os
 import re
+from bisect import bisect_left, bisect_right
 from pathlib import Path
 from config import IndexerConfig
 
@@ -189,33 +190,30 @@ def _chunk_by_blank_lines(
     max_chars = config.chunk_size_tokens * CHARS_PER_TOKEN
     overlap_chars = config.chunk_overlap_tokens * CHARS_PER_TOKEN
 
-    # 先找边界行（结构声明行）
+    # 先找边界行（结构声明行）并建立字符位置索引
     boundary_indices = _find_boundaries(lines, language)
+    char_offsets = [0]
+    for line in lines:
+        char_offsets.append(char_offsets[-1] + len(line) + 1)
 
     chunks: list[Chunk] = []
     start = 0
 
     while start < len(lines):
-        end = min(start + max(10, max_chars // max(1, sum(len(l) for l in lines[start:start + 50]) // 50)), len(lines))
+        target_offset = char_offsets[start] + max_chars
+        hard_end = min(
+            len(lines),
+            max(start + 1, bisect_right(char_offsets, target_offset) - 1),
+        )
 
-        # 在 max_chars 范围内找最合适的断点
-        best_end = start + 1
-        for i in range(start + 1, end):
-            if i in boundary_indices:
-                best_end = i
-            if i - start > max_chars // CHARS_PER_TOKEN:
-                break
-
-        # 如果找不到自然边界，按字符数强制切
-        if best_end <= start + 1:
-            char_count = 0
-            for i in range(start, end):
-                char_count += len(lines[i]) + 1
-                if char_count > max_chars:
-                    best_end = i
-                    break
-            else:
-                best_end = end
+        # 仅在块大小达到目标的一半后使用自然边界，避免产生极小块。
+        natural_ends = [
+            index
+            for index in boundary_indices
+            if start < index <= hard_end
+            and char_offsets[index] - char_offsets[start] >= max_chars // 2
+        ]
+        best_end = max(natural_ends, default=hard_end)
 
         # 提取内容
         chunk_lines = lines[start:best_end]
@@ -232,11 +230,13 @@ def _chunk_by_blank_lines(
                 end_line=best_end,
             ))
 
-        # 下一块从 (best_end - overlap) 开始
-        overlap_lines = max(1, overlap_chars // max(1, sum(len(l) for l in lines[:min(10, len(lines))]) // 10))
-        start = max(best_end - overlap_lines, start + 1)
-        if start >= len(lines):
+        if best_end >= len(lines):
             break
+
+        # 按字符量回退产生重叠，并确保游标始终向前推进。
+        overlap_offset = max(char_offsets[start + 1], char_offsets[best_end] - overlap_chars)
+        next_start = bisect_left(char_offsets, overlap_offset, start + 1, best_end)
+        start = max(start + 1, min(next_start, best_end - 1))
 
     return chunks
 

@@ -12,6 +12,7 @@ import ContextPanel from './components/ContextPanel'
 import { useChat } from './hooks/useChat'
 import { useProjects } from './hooks/useProjects'
 import type { Project } from './types'
+import config from './config'
 
 export default function App() {
   const { messages, isStreaming, error, send, clear, retry } = useChat()
@@ -61,14 +62,14 @@ export default function App() {
       {/* -------- 主区域 -------- */}
       <main className="flex-1 flex flex-col min-w-0 relative">
         <Header
-          candidateName="向荣鑫"
+          candidateName={config.ui.candidate_name}
           onClear={clear}
         />
 
         <ChatArea
           messages={messages}
           isStreaming={isStreaming}
-          onSend={send}
+          onSend={(question) => send(question, selectedProject)}
           onRetry={retry}
           error={error}
         >

@@ -30,6 +30,8 @@ export interface Message {
   timestamp: number
   /** 是否正在流式生成中 */
   isStreaming?: boolean
+  /** 本条问题限定的项目范围 */
+  scope?: string
 }
 
 /** 检索到的代码块 */
@@ -41,6 +43,8 @@ export interface Chunk {
   /** 所属层级：project | architecture | code | history */
   level: 'project' | 'architecture' | 'code' | 'history'
   score?: number
+  startLine?: number
+  endLine?: number
 }
 
 /** 项目概览 */

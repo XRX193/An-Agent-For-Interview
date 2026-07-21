@@ -3,7 +3,14 @@ name: Deploy Worker to Cloudflare
 on:
   push:
     branches: [main]
+    paths:
+      - 'interview-agent/worker/**'
+      - 'interview-agent/config.json'
+      - '.github/workflows/deploy-worker.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
@@ -25,13 +32,19 @@ jobs:
           cache-dependency-path: interview-agent/worker/package-lock.json
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Deploy to Cloudflare
-        run: npx wrangler deploy
+      - name: Check
+        run: npm run lint && npm test
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: './interview-agent/worker'
+          command: deploy
+          secrets: |
+            DEEPSEEK_API_KEY
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}

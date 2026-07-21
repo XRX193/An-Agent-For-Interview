@@ -24,17 +24,6 @@ class IndexerConfig:
     # 明确包含的仓库（repo_mode=listed 时使用）
     repo_include: list[str] = field(default_factory=list)
 
-    # ===== Supabase =====
-    supabase_url: str = ""
-    supabase_key: str = ""
-
-    # ===== Embedding =====
-    embedding_provider: str = "openai"  # "openai" | "voyage"
-    embedding_model: str = "text-embedding-3-small"
-    embedding_dimensions: int = 512
-    openai_api_key: str = ""
-    voyage_api_key: str = ""
-
     # ===== 分块参数 =====
     chunk_size_tokens: int = 500       # 目标 chunk 大小（tokens）
     chunk_overlap_tokens: int = 50     # 相邻 chunk 重叠量（tokens）
@@ -46,6 +35,7 @@ class IndexerConfig:
         ".git", "node_modules", "__pycache__", ".venv", "venv",
         ".next", ".nuxt", "dist", "build", "target",
         ".turbo", ".cache", "coverage", ".nyc_output",
+        ".idea", ".vscode", ".claude", ".codex",
     ])
     # 始终跳过的文件模式（glob）
     skip_patterns: list[str] = field(default_factory=lambda: [
@@ -73,8 +63,7 @@ class IndexerConfig:
     ])
 
     # ===== 运行参数 =====
-    batch_size: int = 50               # 每批向量化的 chunk 数
-    clone_dir: str = "./_clones"       # 临时克隆目录
+    clone_dir: str = field(default_factory=lambda: str(Path(__file__).resolve().parent / "_clones"))
     dry_run: bool = False              # 只扫描不写入
 
     @classmethod
@@ -99,13 +88,7 @@ class IndexerConfig:
 
         # 2. 环境变量覆盖敏感信息
         cfg.github_token = os.getenv("GITHUB_TOKEN", os.getenv("GH_TOKEN", ""))
-        cfg.supabase_url = os.getenv("SUPABASE_URL", "")
-        cfg.supabase_key = os.getenv("SUPABASE_KEY", "")
-        cfg.openai_api_key = os.getenv("OPENAI_API_KEY", "")
-        cfg.voyage_api_key = os.getenv("VOYAGE_API_KEY", "")
-        cfg.embedding_provider = os.getenv("EMBEDDING_PROVIDER", "openai")
-
-        # 3. 环境变量也覆盖非敏感配置
+        # 2. 环境变量也覆盖非敏感配置
         cfg.github_username = os.getenv("GITHUB_USERNAME", cfg.github_username)
 
         return cfg
@@ -117,9 +100,4 @@ class IndexerConfig:
             missing.append("github_username: 需要 GitHub 用户名来拉取公开仓库")
         if self.repo_mode == "listed" and not self.repo_include:
             missing.append("repo_include: 在 listed 模式下需要指定仓库列表")
-        if not self.supabase_url:
-            missing.append("SUPABASE_URL: 环境变量未设置")
-        if not self.supabase_key:
-            missing.append("SUPABASE_KEY: 环境变量未设置")
-        # Embedding API Key 是可选的，没有也可以用关键词检索
         return missing

@@ -5,13 +5,18 @@
  * fetchProjects、healthCheck 四个接口方法
  * 开发环境通过 Vite 代理转发，生产环境直连 Cloudflare Worker
  */
-import type { ChatRequest, Project } from '../types'
+import type { Project } from '../types'
 
 /** API 基础 URL —— 生产环境指向 Cloudflare Worker，开发环境指向本地代理 */
-const API_BASE = import.meta.env.VITE_API_BASE ?? '/api'
+const API_BASE = (import.meta.env.VITE_API_BASE ?? '/api').replace(/\/$/, '')
+
+/** 构建 API URL，调用方统一传入以 / 开头的路由。 */
+export function apiUrl(path: string): string {
+  return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiUrl(path), {
     headers: {
       'Content-Type': 'application/json',
     },
@@ -26,36 +31,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-/** 发送对话消息（非流式） */
-export async function sendChat(body: ChatRequest): Promise<{ answer: string }> {
-  return request('/chat', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
-/** 发送对话消息（流式 SSE） */
-export function sendChatStream(body: ChatRequest): AbortController {
-  const controller = new AbortController()
-
-  fetch(`${API_BASE}/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: controller.signal,
-  }).catch(() => {
-    /* 由调用方处理 abort */
-  })
-
-  return controller
-}
-
 /** 获取项目列表 */
 export async function fetchProjects(): Promise<Project[]> {
   return request('/projects')
 }
 
 /** 检查服务状态 */
-export async function healthCheck(): Promise<{ ok: boolean; lastIndexedAt: string }> {
+export async function healthCheck(): Promise<{ ok: boolean; lastIndexedAt: string | null }> {
   return request('/health')
 }

@@ -40,7 +40,7 @@ def get_public_repos(config: IndexerConfig) -> list[dict]:
                         data = json.loads(resp.read().decode())
                         repos.append(data)
                 except urllib.error.HTTPError as e:
-                    print(f"  ⚠️  仓库 {repo_name} 获取失败: {e.code}")
+                    raise RuntimeError(f"仓库 {repo_name} 获取失败: HTTP {e.code}") from e
             break
         else:
             # 全部公开仓库模式
@@ -55,8 +55,7 @@ def get_public_repos(config: IndexerConfig) -> list[dict]:
                     repos.extend(data)
                     page += 1
             except urllib.error.HTTPError as e:
-                print(f"  ❌ GitHub API 错误: {e.code} {e.reason}")
-                break
+                raise RuntimeError(f"GitHub API 错误: {e.code} {e.reason}") from e
 
     # 过滤排除列表和无效仓库名
     invalid_names = {'-', '.', '..', ''}
@@ -72,10 +71,6 @@ def clone_or_pull(repo: dict, clone_dir: str, config: IndexerConfig) -> str | No
     repo_name = repo["name"]
     repo_path = os.path.join(clone_dir, repo_name)
     clone_url = repo["clone_url"]
-
-    # 如果有 token 且是私有仓库（未来扩展），使用 token 认证
-    if config.github_token:
-        clone_url = clone_url.replace("https://", f"https://{config.github_token}@")
 
     if os.path.exists(repo_path):
         # 已存在，执行 git pull

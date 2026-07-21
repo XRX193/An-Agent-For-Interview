@@ -26,12 +26,12 @@ export async function* parseSSEStream(
     buffer += decoder.decode(value, { stream: true })
 
     // SSE 使用双换行分隔事件
-    const parts = buffer.split('\n\n')
+    const parts = buffer.split(/\r?\n\r?\n/)
     // 最后一个可能不完整，保留到下次循环
     buffer = parts.pop() ?? ''
 
     for (const part of parts) {
-      const lines = part.split('\n')
+      const lines = part.split(/\r?\n/)
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6).trim()
@@ -53,7 +53,7 @@ export async function* parseSSEStream(
 
   // 处理残留的 buffer
   if (buffer.trim()) {
-    const lines = buffer.split('\n')
+    const lines = buffer.split(/\r?\n/)
     for (const line of lines) {
       if (line.startsWith('data: ')) {
         const data = line.slice(6).trim()

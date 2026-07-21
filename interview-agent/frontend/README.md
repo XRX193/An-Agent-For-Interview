@@ -107,20 +107,20 @@ export default defineConfig({
 
 | 变量 | 说明 | 默认值 | 示例 |
 |:-----|:-----|:-------|:------|
-| `VITE_API_BASE` | 后端 API 基地址 | `/api` | `https://interview-agent.你的账号.workers.dev` |
+| `VITE_API_BASE` | 后端 API 基地址（必须包含 `/api`） | `/api` | `https://interview-agent.你的账号.workers.dev/api` |
 | `VITE_BASE` | 部署路径前缀 | `/` | `/interview-agent/`（GitHub Pages） |
 
 生产构建时，`VITE_BASE` 会自动设为 `/interview-agent/`（由 GitHub Actions 注入），确保资源路径正确。
 
 ## 部署
 
-本前端通过 GitHub Actions 自动构建并部署到 GitHub Pages。详见 [deploy-frontend.yml](../.github/workflows/deploy-frontend.yml)。
+本前端通过 GitHub Actions 自动构建并部署到 GitHub Pages。详见 [deploy-frontend.yml](../../.github/workflows/deploy-frontend.yml)。
 
 部署流程：
 1. 推送代码到 `main` 分支
-2. GitHub Actions 自动触发构建：`VITE_BASE=/interview-agent/ npm run build`
-3. 构建产物 `dist/` 被部署到 `gh-pages` 分支
-4. GitHub Pages 从 `gh-pages` 分支提供服务
+2. GitHub Actions 依次执行 lint、测试和生产构建
+3. 构建产物 `dist/` 作为 Pages artifact 上传
+4. GitHub Pages 发布该 artifact
 
 ## 验证
 
@@ -168,7 +168,7 @@ export default defineConfig({
 
 ### API 请求失败 / CORS 错误
 
-确认后端 Worker 已部署且 CORS 配置正确。检查 `VITE_API_BASE` 环境变量是否指向正确的 Worker 地址。
+确认后端 Worker 已部署且 CORS 配置正确。检查 `VITE_API_BASE` 是否指向 Worker 的 `/api` 地址，并在仓库 Variables 中设置同名变量。
 
 ### 代码高亮不生效
 
