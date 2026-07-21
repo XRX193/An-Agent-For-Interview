@@ -1,43 +1,58 @@
-/**
- * 顶部导航栏 — 显示候选人信息、索引状态、清空对话按钮
- */
+import { Database, Folder, MoreHorizontal, PanelLeftOpen, RotateCcw } from 'lucide-react'
+
 interface HeaderProps {
-  candidateName?: string
-  lastIndexedAt?: string
-  onClear?: () => void
+  title: string
+  contextCount: number
+  contextOpen: boolean
+  onOpenMenu: () => void
+  onToggleContext: () => void
+  onClear: () => void
 }
 
-export default function Header({ candidateName = '候选人', lastIndexedAt, onClear }: HeaderProps) {
+export default function Header({
+  title,
+  contextCount,
+  contextOpen,
+  onOpenMenu,
+  onToggleContext,
+  onClear,
+}: HeaderProps) {
   return (
-    <header className="flex items-center justify-between px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold">
-          {candidateName.charAt(0)}
-        </div>
-        <div>
-          <h1 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            技术面试助手
-          </h1>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {candidateName} 的项目智能体
-          </p>
-        </div>
+    <header className="workspace-header">
+      <div className="workspace-title-wrap">
+        <button
+          type="button"
+          className="icon-button mobile-only"
+          aria-label="打开项目栏"
+          title="打开项目栏"
+          onClick={onOpenMenu}
+        >
+          <PanelLeftOpen size={18} />
+        </button>
+        <Folder size={17} className="header-folder" aria-hidden="true" />
+        <h1>{title}</h1>
+        <MoreHorizontal size={18} className="header-more" aria-hidden="true" />
       </div>
 
-      <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
-        {lastIndexedAt && (
-          <span>
-            索引更新：{new Date(lastIndexedAt).toLocaleDateString('zh-CN')}
-          </span>
-        )}
-        {onClear && (
-          <button
-            onClick={onClear}
-            className="px-2 py-1 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-800 transition-colors"
-          >
-            清空对话
-          </button>
-        )}
+      <div className="header-actions">
+        <button
+          type="button"
+          className={`context-button ${contextOpen ? 'active' : ''}`}
+          onClick={onToggleContext}
+        >
+          <Database size={16} />
+          <span>检索上下文</span>
+          <span className="context-count">{contextCount}</span>
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="清空对话"
+          title="清空对话"
+          onClick={onClear}
+        >
+          <RotateCcw size={17} />
+        </button>
       </div>
     </header>
   )

@@ -1,33 +1,43 @@
-/**
- * 消息列表 — 渲染完整对话历史
- * 空状态时显示引导文案，有消息时逐条渲染 MessageBubble
- */
+import { ArrowUpRight, Braces, GitBranch, Layers3 } from 'lucide-react'
 import type { Message } from '../types'
 import MessageBubble from './MessageBubble'
 
 interface MessageListProps {
   messages: Message[]
+  candidateName: string
+  onSend: (question: string) => void
 }
 
-export default function MessageList({ messages }: MessageListProps) {
+const prompts = [
+  { icon: GitBranch, label: '介绍一个最有代表性的项目' },
+  { icon: Layers3, label: '项目架构中最关键的设计是什么？' },
+  { icon: Braces, label: '结合代码讲一次技术难点' },
+]
+
+export default function MessageList({ messages, candidateName, onSend }: MessageListProps) {
   if (messages.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500 px-6 py-20">
-        <svg className="w-16 h-16 mb-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
-        </svg>
-        <p className="text-lg font-medium mb-1">开始面试对话</p>
-        <p className="text-sm text-center max-w-md">
-          向面试助手提问，Agent 将基于候选人的 GitHub 项目自动生成专业回答，并引用具体代码作为佐证。
-        </p>
+      <div className="empty-state">
+        <div className="empty-mark">IA</div>
+        <p className="empty-eyebrow">{candidateName} · 项目面试台</p>
+        <h2>从一个真实项目开始</h2>
+        <div className="prompt-list">
+          {prompts.map(({ icon: Icon, label }) => (
+            <button type="button" key={label} onClick={() => onSend(label)}>
+              <Icon size={17} />
+              <span>{label}</span>
+              <ArrowUpRight size={16} />
+            </button>
+          ))}
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="px-4 py-4 space-y-4">
-      {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} />
+    <div className="message-list">
+      {messages.map((message) => (
+        <MessageBubble key={message.id} message={message} />
       ))}
     </div>
   )

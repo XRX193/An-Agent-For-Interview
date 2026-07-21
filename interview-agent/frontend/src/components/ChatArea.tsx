@@ -1,12 +1,8 @@
-/**
- * 对话区域容器 — 消息列表 + 输入栏 + 错误提示
- * 组合 MessageList / InputBar / TypingIndicator，管理整体对话布局
- */
-import type { ReactNode } from 'react'
-import MessageList from './MessageList'
-import InputBar from './InputBar'
-import TypingIndicator from './TypingIndicator'
+import { AlertCircle } from 'lucide-react'
 import type { Message } from '../types'
+import InputBar from './InputBar'
+import MessageList from './MessageList'
+import TypingIndicator from './TypingIndicator'
 
 interface ChatAreaProps {
   messages: Message[]
@@ -14,7 +10,10 @@ interface ChatAreaProps {
   onSend: (question: string) => void
   onRetry?: () => void
   error: string | null
-  children?: ReactNode
+  candidateName: string
+  selectedProject?: string
+  onClearProject: () => void
+  onOpenProjects: () => void
 }
 
 export default function ChatArea({
@@ -23,38 +22,38 @@ export default function ChatArea({
   onSend,
   onRetry,
   error,
-  children,
+  candidateName,
+  selectedProject,
+  onClearProject,
+  onOpenProjects,
 }: ChatAreaProps) {
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-gray-50 dark:bg-gray-950">
-      {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto">
-        {children}
-        <MessageList messages={messages} />
-        {isStreaming && (
-          <div className="px-4 py-2">
-            <TypingIndicator />
-          </div>
-        )}
+    <section className="chat-area" aria-label="面试对话">
+      <div className="message-scroller">
+        <MessageList messages={messages} onSend={onSend} candidateName={candidateName} />
+        {isStreaming && <TypingIndicator />}
       </div>
 
-      {/* 错误提示 */}
-      {error && (
-        <div className="mx-4 mb-2 px-4 py-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-300">
-          <span>{error}</span>
-          {onRetry && (
-            <button
-              onClick={onRetry}
-              className="ml-3 underline hover:no-underline"
-            >
-              重试
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* 输入区域 */}
-      <InputBar onSend={onSend} disabled={isStreaming} />
-    </div>
+      <div className="composer-dock">
+        {error && (
+          <div className="error-banner" role="alert">
+            <AlertCircle size={16} />
+            <span>{error}</span>
+            {onRetry && (
+              <button type="button" onClick={onRetry}>
+                重试
+              </button>
+            )}
+          </div>
+        )}
+        <InputBar
+          onSend={onSend}
+          disabled={isStreaming}
+          selectedProject={selectedProject}
+          onClearProject={onClearProject}
+          onOpenProjects={onOpenProjects}
+        />
+      </div>
+    </section>
   )
 }

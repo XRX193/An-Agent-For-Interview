@@ -1,83 +1,98 @@
-/**
- * 输入栏 — 底部消息输入区域
- *
- * 支持 Enter 发送 / Shift+Enter 换行，自适应高度（最大 150px）
- * 生成中显示加载动画并禁用输入
- */
-import { useRef, type KeyboardEvent } from 'react'
+import { ArrowUp, Folder, LoaderCircle, Plus, X } from 'lucide-react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 
 interface InputBarProps {
   onSend: (question: string) => void
   disabled?: boolean
+  selectedProject?: string
+  onClearProject: () => void
+  onOpenProjects: () => void
 }
 
-export default function InputBar({ onSend, disabled }: InputBarProps) {
+export default function InputBar({
+  onSend,
+  disabled,
+  selectedProject,
+  onClearProject,
+  onOpenProjects,
+}: InputBarProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const [value, setValue] = useState('')
 
   const handleSubmit = () => {
-    const value = inputRef.current?.value.trim()
-    if (!value || disabled) return
+    const question = value.trim()
+    if (!question || disabled) return
 
-    onSend(value)
-
-    // 清空输入框并重置高度
-    if (inputRef.current) {
-      inputRef.current.value = ''
-      inputRef.current.style.height = 'auto'
-    }
+    onSend(question)
+    setValue('')
+    if (inputRef.current) inputRef.current.style.height = 'auto'
   }
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Enter 发送，Shift+Enter 换行
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
       handleSubmit()
     }
   }
 
   const handleInput = () => {
-    const el = inputRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 150)}px`
+    const element = inputRef.current
+    if (!element) return
+    element.style.height = 'auto'
+    element.style.height = `${Math.min(element.scrollHeight, 144)}px`
   }
 
   return (
-    <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-      <div className="flex items-end gap-2 bg-gray-100 dark:bg-gray-800 rounded-2xl px-4 py-3 border border-gray-200 dark:border-gray-700 focus-within:border-blue-400 dark:focus-within:border-blue-500 transition-colors">
-        <textarea
-          ref={inputRef}
-          onKeyDown={handleKeyDown}
-          onInput={handleInput}
-          disabled={disabled}
-          rows={1}
-          placeholder={disabled ? '正在生成回答...' : '输入面试问题，如「你在 xx 项目中用了什么技术栈？」'}
-          className="flex-1 resize-none bg-transparent text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none max-h-[150px] leading-relaxed"
-        />
+    <div className="composer">
+      {selectedProject && (
+        <div className="scope-row">
+          <span className="scope-chip">
+            <Folder size={13} />
+            <span>{selectedProject}</span>
+            <button type="button" onClick={onClearProject} aria-label="取消项目限定" title="取消项目限定">
+              <X size={13} />
+            </button>
+          </span>
+        </div>
+      )}
 
+      <textarea
+        ref={inputRef}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={handleKeyDown}
+        onInput={handleInput}
+        disabled={disabled}
+        rows={1}
+        placeholder={disabled ? '正在整理回答...' : '向项目智能体提问'}
+        aria-label="面试问题"
+      />
+
+      <div className="composer-toolbar">
         <button
-          onClick={handleSubmit}
-          disabled={disabled}
-          className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white transition-colors"
-          aria-label="发送"
+          type="button"
+          className="composer-tool"
+          aria-label="选择项目"
+          title="选择项目"
+          onClick={onOpenProjects}
         >
-          {disabled ? (
-            <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-          ) : (
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-          )}
+          <Plus size={19} />
+        </button>
+        <div className="composer-status">
+          <span className="status-dot" />
+          <span>{selectedProject ? '单项目检索' : '全部项目检索'}</span>
+        </div>
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={disabled || !value.trim()}
+          className="send-button"
+          aria-label="发送问题"
+          title="发送问题"
+        >
+          {disabled ? <LoaderCircle size={18} className="spin" /> : <ArrowUp size={19} />}
         </button>
       </div>
-
-      <p className="mt-1.5 text-[10px] text-gray-400 dark:text-gray-500 text-center">
-        Enter 发送 · Shift+Enter 换行 · 回答基于候选人 GitHub 项目自动生成
-      </p>
     </div>
   )
 }
