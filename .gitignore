@@ -8,6 +8,14 @@ node_modules/
 .idea/
 *.iml
 
+# Local agent configuration
+.claude/
+.codex/
+
+# Documentation: only the root README is published
+*.md
+!/README.md
+
 # OS
 .DS_Store
 Thumbs.db

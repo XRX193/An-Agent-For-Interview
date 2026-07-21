@@ -1,186 +1,275 @@
 # Interview Agent
 
-> 🤖 基于 GitHub 开源项目的 AI 面试助手 —— 面试时自动生成专业、诚实的回答
+> 基于 GitHub 公开项目的 AI 技术面试助手。面试官直接提问，Agent 检索候选人的真实代码并生成带文件与行号引用的回答。
 
+[![Version](https://img.shields.io/badge/version-v1.3-2563eb)](https://github.com/XRX193/An-Agent-For-Interview/releases/tag/v1.3)
 [![Deploy Frontend](https://github.com/XRX193/An-Agent-For-Interview/actions/workflows/deploy-frontend.yml/badge.svg)](https://github.com/XRX193/An-Agent-For-Interview/actions/workflows/deploy-frontend.yml)
 [![Deploy Worker](https://github.com/XRX193/An-Agent-For-Interview/actions/workflows/deploy-worker.yml/badge.svg)](https://github.com/XRX193/An-Agent-For-Interview/actions/workflows/deploy-worker.yml)
+[![Index Repositories](https://github.com/XRX193/An-Agent-For-Interview/actions/workflows/index-repos.yml/badge.svg)](https://github.com/XRX193/An-Agent-For-Interview/actions/workflows/index-repos.yml)
 
-## 这是什么？
+## 项目概览
 
-面试 Agent 是一个 AI 驱动的技术面试辅助工具。它会自动索引你在 GitHub 上的所有公开项目，面试时面试官可以通过网页界面直接提问，Agent 基于你的实际项目代码——而非通用模板——生成专业的回答，并引用具体的文件路径和代码行作为佐证。
+Interview Agent 面向技术面试场景，将候选人的 GitHub 公开仓库构建为轻量 JSON 索引。前端通过 Cloudflare Worker 发起检索和 DeepSeek 对话，回答中引用的仓库、路径和行号会经过后端校验。
 
-```
-面试官："你在 xx 项目中用了什么设计模式？为什么？"
-             │
-             ▼
-   Agent 检索你的 GitHub 代码 → 找到具体实现 → 引用文件路径和代码
-             │
-             ▼
-   回答："在 my-project/src/repositories/UserRepo.cs:42
-         使用了 Repository 模式，配合依赖注入实现数据访问层解耦..."
-```
-
-## 快速开始
-
-### 前置条件
-
-- [GitHub 账号](https://github.com)（至少有几个公开仓库）
-- [Cloudflare 账号](https://dash.cloudflare.com)（免费）
-- [Supabase 账号](https://supabase.com)（免费，用于向量存储）
-- [DeepSeek API Key](https://platform.deepseek.com)（用于 AI 对话，💰 极低成本）
-- [OpenAI API Key](https://platform.openai.com)（可选，用于 Embedding 向量检索；无则使用关键词检索）
-
-### 1. Fork 仓库
-
-点击右上角 **Fork** → 创建你自己的副本。
-
-### 2. 修改配置
-
-编辑 `interview-agent/config.json`，将 `github_username` 改为你的 GitHub 用户名：
-
-```json
-{
-  "github_username": "YOUR_GITHUB_USERNAME",
-  "ui": {
-    "candidate_name": "你的名字",
-    "candidate_title": "你的职位"
-  }
-}
+```text
+GitHub 公开仓库
+      |
+      v
+Python 索引器 -> search_index.json
+      |
+      v
+Cloudflare Worker -> 关键词检索 -> Prompt 组装 -> DeepSeek SSE
+      |
+      v
+React 前端 -> 流式回答、代码高亮、项目筛选、检索上下文
 ```
 
-### 3. 配置外部服务
+核心特点：
 
-#### Supabase（向量数据库）
+- 回答基于真实项目内容，不依赖通用面试模板。
+- 支持按项目限定检索范围。
+- 使用 SSE 流式输出，并展示实际使用的检索片段。
+- 文件引用必须匹配已检索路径和行号范围。
+- 索引文件可随仓库更新自动增量重建。
+- 前端、Worker 和索引器均由自动化测试与 CI 门禁保护。
 
-1. 在 [supabase.com](https://supabase.com) 创建免费项目
-2. 在 SQL Editor 中执行建表语句（见 `interview-agent/indexer/upsert.py` 中的 `init_supabase_tables` SQL）
-3. 获取项目 URL 和 `anon` key（Settings → API）
+## v1.3 更新
 
-#### Cloudflare Workers
+v1.3 聚焦正确性、安全性、部署可靠性和维护成本。
 
-1. 在 [dash.cloudflare.com](https://dash.cloudflare.com) → Workers & Pages → 创建 API Token
-2. 获取 Account ID
+| 模块 | 优化内容 | 效果 |
+|:-----|:---------|:-----|
+| 前端 API | 统一使用 `/api` 前缀，开发环境代理到本地 Worker | 修复生产项目列表与健康检查 404 |
+| 项目范围 | 将选中项目作为 `scope` 发送 | 项目筛选真正影响检索结果 |
+| SSE | 统一流解析器，支持 CRLF、上下文和错误事件 | 检索面板与错误提示可正常工作 |
+| 重试 | 重建正确历史，不再重复用户消息 | 多轮对话历史保持一致 |
+| 检索 | 移除未实现的向量分支，改进中英文关键词评分 | 避免配置 Embedding 后返回空结果 |
+| 引用 | 校验仓库、完整路径、分支和行号范围 | GitHub 链接可用，减少虚构引用 |
+| Worker 安全 | CORS 白名单、请求大小限制、历史角色校验、移除 debug 路由 | 降低跨域滥用和 Prompt 注入风险 |
+| 配置 | 前端、Worker、索引器共同读取 `config.json` | Fork 后不再需要多处修改候选人信息 |
+| 索引器 | 修复尾部碎片，增加稳定 ID、元数据和真正的增量模式 | 索引更小、更稳定，检索噪声更低 |
+| 凭据 | 公共仓库克隆不再把 Token 写入 Git URL | 避免 Token 出现在错误日志和 Git 配置中 |
+| CI/CD | 合并重复工作流，部署前执行测试，使用可复现安装 | 减少工作流漂移和带错部署 |
+| 依赖 | 删除未使用的 Supabase、Hono、Embedding 依赖 | 安装更快，供应链面更小 |
 
-### 4. 设置 GitHub Secrets
-
-在仓库 **Settings → Secrets and variables → Actions** 中添加：
-
-| Secret | 说明 |
-|:-------|:-----|
-| `DEEPSEEK_API_KEY` | DeepSeek API 密钥（⚠️ 必需） |
-| `SUPABASE_URL` | Supabase 项目 URL |
-| `SUPABASE_ANON_KEY` | Supabase 匿名密钥 |
-| `OPENAI_API_KEY` | OpenAI API 密钥（可选，无则用关键词检索） |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API Token |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID |
-| `GITHUB_TOKEN` | GitHub PAT（可选，提高 API 限额） |
-
-### 5. 首次索引
-
-```bash
-# 手动触发 GitHub Action
-gh workflow run index-repos.yml -f mode=full
-
-# 或本地运行
-cd interview-agent/indexer
-pip install -r requirements.txt
-python run.py --full
-```
-
-### 6. 部署
-
-推送代码到 `main` 分支，GitHub Actions 会自动部署前端到 GitHub Pages，Worker 到 Cloudflare。
-
-```bash
-git push origin main
-```
-
-### 7. 验证
-
-打开 `https://{你的用户名}.github.io/An-Agent-For-Interview`，尝试发送一个测试问题。详细验证步骤见 [frontend/README.md](interview-agent/frontend/README.md#验证)。
-
-## 项目结构
-
-```
-An-Agent-For-Interview/
-├── interview-agent/
-│   ├── frontend/            # React 19 + TypeScript 前端（部署到 GitHub Pages）
-│   │   └── src/
-│   │       ├── components/      # UI 组件
-│   │       ├── hooks/           # React Hooks（useChat, useProjects）
-│   │       ├── lib/             # API 客户端、SSE 解析器
-│   │       └── types/           # TypeScript 类型定义
-│   │
-│   ├── worker/              # Cloudflare Worker（API 后端）
-│   │   └── src/
-│   │       ├── index.ts         # 路由分发（Hono 框架）
-│   │       ├── chat.ts          # 核心对话 + SSE 流处理
-│   │       ├── prompt.ts        # System Prompt 动态组装
-│   │       ├── retrieve.ts      # 向量检索 + 重排序
-│   │       ├── embed.ts         # Embedding API 封装
-│   │       ├── guardrails.ts    # 速率限制 + 话题校验
-│   │       └── db.ts            # Supabase 客户端
-│   │
-│   ├── indexer/             # Python 仓库索引脚本
-│   │   ├── run.py               # 入口
-│   │   ├── cloner.py            # Git clone/fetch
-│   │   ├── chunker.py           # 代码分块
-│   │   ├── embedder.py          # 批量 Embedding
-│   │   ├── upsert.py            # 向量数据库写入
-│   │   └── filters.py           # 文件过滤
-│   │
-│   ├── config.json          # 用户配置
-│   └── search_index.json    # 搜索索引
-│
-├── .github/workflows/       # CI/CD
-│   ├── deploy-frontend.yml
-│   ├── deploy-worker.yml
-│   └── index-repos.yml
-│
-├── LICENSE                  # MIT
-└── README.md                # 本文件
-```
-
-## 成本
-
-| 服务 | 月费 |
-|:-----|:----:|
-| GitHub Pages（前端托管） | $0 |
-| Cloudflare Workers（API） | $0（10万请求/天） |
-| Supabase（向量数据库） | $0（500MB） |
-| DeepSeek API（~10次面试/月） | ~$0.10-0.30 |
-| Embedding API（可选，首次索引+增量） | ~$0.10 |
-| **合计** | **~$0-0.50/月** |
+v1.3 新增 15 个自动化测试：前端 2 个、Worker 7 个、索引器 6 个。
 
 ## 技术栈
 
 | 层 | 技术 |
 |:---|:-----|
-| 前端 | React 19 + TypeScript + Vite + Tailwind CSS 4 |
-| 后端 | Cloudflare Workers + Hono |
-| AI 对话 | DeepSeek Chat（deepseek-chat） |
-| 向量数据库 | Supabase pgvector |
-| Embedding | text-embedding-3-small |
-| CI/CD | GitHub Actions |
-| 索引 | Python + GitHub API |
+| 前端 | React 19、TypeScript、Vite 8、Tailwind CSS 4 |
+| API | Cloudflare Workers、原生 Fetch/Streams API |
+| AI | DeepSeek Chat |
+| 检索 | 本地 JSON 索引、中英文关键词评分 |
+| 索引 | Python 3.13 标准库、GitHub API、Git |
+| 部署 | GitHub Actions、GitHub Pages、Cloudflare Workers |
 
-## 常见问题
+## 项目结构
 
-**Q: 需要面试官安装什么吗？**
-不需要，面试官只需要浏览器打开网页即可。
+```text
+An-Agent-For-Interview/
+|-- .github/workflows/
+|   |-- deploy-frontend.yml
+|   |-- deploy-worker.yml
+|   `-- index-repos.yml
+|-- interview-agent/
+|   |-- config.json
+|   |-- search_index.json
+|   |-- frontend/
+|   |   |-- src/components/
+|   |   |-- src/hooks/
+|   |   |-- src/lib/
+|   |   `-- test/
+|   |-- worker/
+|   |   |-- src/
+|   |   `-- test/
+|   `-- indexer/
+|       |-- run.py
+|       |-- chunker.py
+|       |-- cloner.py
+|       |-- filters.py
+|       |-- upsert.py
+|       `-- tests/
+|-- LICENSE
+`-- README.md
+```
 
-**Q: Agent 回答准确吗？**
-回答严格基于你 GitHub 上的实际代码，引用具体文件路径作为佐证。但偶尔 LLM 可能产生幻觉——请核实关键信息。
+## 快速开始
 
-**Q: 能私有部署吗？**
-可以。本项目所有组件都可自托管。详见部署架构。
+### 1. 准备服务
 
-**Q: 如何确保安全？**
-- 只索引公开仓库
-- 速率限制防止滥用
-- System Prompt 防护防止越狱
-- CORS 白名单
+- GitHub 账号及公开仓库
+- Cloudflare 账号
+- DeepSeek API Key
+- Node.js 22+
+- Python 3.13+（仅本地运行索引器时需要）
+
+项目不再依赖 Supabase 或 OpenAI Embedding。
+
+### 2. Fork 并配置
+
+编辑 `interview-agent/config.json`：
+
+```json
+{
+  "github_username": "YOUR_GITHUB_USERNAME",
+  "index_storage": {
+    "repository_owner": "YOUR_FORK_OWNER",
+    "repository_name": "An-Agent-For-Interview",
+    "branch": "main"
+  },
+  "ui": {
+    "candidate_name": "你的名字",
+    "candidate_title": "你的职位"
+  },
+  "security": {
+    "allowed_origins": [
+      "https://YOUR_FORK_OWNER.github.io",
+      "http://localhost:5173"
+    ]
+  }
+}
+```
+
+`github_username` 是被索引的候选人账号；`index_storage.repository_owner` 是存放 `search_index.json` 的 Fork 所有者，两者可以不同。
+
+### 3. 配置 GitHub Actions
+
+在仓库 Settings -> Secrets and variables -> Actions 中添加：
+
+Secrets：
+
+| 名称 | 用途 |
+|:-----|:-----|
+| `DEEPSEEK_API_KEY` | Worker 调用 DeepSeek |
+| `CLOUDFLARE_API_TOKEN` | 部署 Worker |
+| `CLOUDFLARE_ACCOUNT_ID` | 指定 Cloudflare 账号 |
+
+Variables：
+
+| 名称 | 用途 | 示例 |
+|:-----|:-----|:-----|
+| `VITE_API_BASE` | 前端访问 Worker 的 API 基地址，必须包含 `/api` | `https://interview-agent-api.example.workers.dev/api` |
+
+GitHub Actions 自带的 `GITHUB_TOKEN` 用于更新索引，无需手动创建 PAT。
+
+### 4. 首次部署
+
+1. 手动运行 `Deploy Worker to Cloudflare` 工作流。
+2. 从 Cloudflare 获取 Worker 地址，并设置 `VITE_API_BASE`。
+3. 手动运行 `Deploy Frontend to GitHub Pages`。
+4. 手动运行一次全量索引：
+
+```bash
+gh workflow run index-repos.yml -f mode=full
+```
+
+之后推送到 `main` 会按变更路径自动部署；索引器每周执行增量更新。
+
+## 本地开发
+
+启动 Worker：
+
+```bash
+cd interview-agent/worker
+npm ci
+npm run dev
+```
+
+启动前端：
+
+```bash
+cd interview-agent/frontend
+npm ci
+npm run dev
+```
+
+Vite 会将 `/api` 代理到 `http://localhost:8787`。可通过 `VITE_DEV_API_TARGET` 覆盖目标地址。
+
+本地生成索引：
+
+```bash
+cd interview-agent/indexer
+python run.py --full
+```
+
+只检查、不写入：
+
+```bash
+python run.py --full --dry-run
+```
+
+## API
+
+| 方法 | 路由 | 说明 |
+|:-----|:-----|:-----|
+| `GET` | `/api/health` | 索引状态、仓库数和文档数 |
+| `GET` | `/api/projects` | 已索引项目列表 |
+| `POST` | `/api/chat` | 检索项目并以 SSE 返回回答 |
+
+`POST /api/chat` 请求示例：
+
+```json
+{
+  "question": "这个项目如何处理流式响应？",
+  "history": [],
+  "scope": "An-Agent-For-Interview"
+}
+```
+
+## 测试
+
+前端：
+
+```bash
+cd interview-agent/frontend
+npm run lint
+npm test
+npm run build
+```
+
+Worker：
+
+```bash
+cd interview-agent/worker
+npm run lint
+npm test
+npx wrangler deploy --dry-run
+```
+
+索引器：
+
+```bash
+python -m unittest discover -s interview-agent/indexer/tests -v
+```
+
+## 安全边界
+
+- 仅索引配置账号的公开仓库。
+- 浏览器请求受 CORS 来源白名单限制。
+- 客户端不能注入 `system` 历史消息。
+- 问题、请求体和对话历史均有长度限制。
+- 检索内容作为不可信数据进入 Prompt，不能覆盖系统规则。
+- 文件引用必须对应本次检索结果。
+
+当前内存限流以单个 Worker 实例为范围。面向公开高流量场景时，建议增加 Cloudflare Rate Limiting、Turnstile 或 Durable Objects。
+
+## 成本
+
+| 服务 | 费用 |
+|:-----|:-----|
+| GitHub Pages | 免费额度内为 $0 |
+| GitHub Actions | 公开仓库免费 |
+| Cloudflare Workers | 免费额度内为 $0 |
+| DeepSeek | 按实际 Token 使用量计费 |
+| JSON 索引 | 存储在 GitHub 仓库，无额外数据库费用 |
+
+## 版本
+
+- `v1.3`：修复核心交互与检索链路，重构 JSON 索引、安全边界、配置和 CI/CD。
+- `v1.2`：完成 React、Worker 和 Python 索引器的基础项目结构。
 
 ## License
 
-MIT © [XRX193](https://github.com/XRX193)
+MIT Copyright (c) [XRX193](https://github.com/XRX193)
