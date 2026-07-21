@@ -6,9 +6,10 @@
  * 开发环境通过 Vite 代理转发，生产环境直连 Cloudflare Worker
  */
 import type { Project } from '../types'
+import { normalizeApiBase } from './apiBase'
 
 /** API 基础 URL —— 生产环境指向 Cloudflare Worker，开发环境指向本地代理 */
-const API_BASE = (import.meta.env.VITE_API_BASE ?? '/api').replace(/\/$/, '')
+const API_BASE = normalizeApiBase(import.meta.env.VITE_API_BASE)
 
 /** 构建 API URL，调用方统一传入以 / 开头的路由。 */
 export function apiUrl(path: string): string {

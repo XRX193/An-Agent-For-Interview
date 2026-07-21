@@ -150,7 +150,7 @@ Variables：
 
 | 名称 | 用途 | 示例 |
 |:-----|:-----|:-----|
-| `VITE_API_BASE` | 前端访问 Worker 的 API 基地址，必须包含 `/api` | `https://interview-agent-api.example.workers.dev/api` |
+| `VITE_API_BASE` | Cloudflare Worker 地址，可使用根地址或 `/api` 地址 | `https://interview-agent-api.example.workers.dev` |
 
 GitHub Actions 自带的 `GITHUB_TOKEN` 用于更新索引，无需手动创建 PAT。
 

@@ -53,7 +53,7 @@ jobs:
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
         run: |
           if [ -z "$VITE_API_BASE" ]; then
-            echo "Repository variable VITE_API_BASE must point to the Worker /api endpoint."
+            echo "Repository variable VITE_API_BASE must point to the Worker URL."
             exit 1
           fi
 
