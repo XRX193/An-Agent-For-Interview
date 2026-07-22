@@ -38,6 +38,8 @@ export interface Project {
 /** Worker 环境变量 */
 export interface WorkerEnv {
   DEEPSEEK_API_KEY: string
+  AI?: Ai
+  VECTOR_INDEX?: VectorizeIndex
   DEEPSEEK_MODEL?: string
   CANDIDATE_NAME?: string
   CANDIDATE_TITLE?: string

@@ -61,6 +61,21 @@ async function loadIndex(env: WorkerEnv): Promise<SearchIndex> {
   }
 }
 
+export async function hydrateDocumentsByIds(
+  matches: Array<{ id: string; score: number }>,
+  env: WorkerEnv,
+): Promise<Document[]> {
+  const { chunks } = await loadIndex(env)
+  const entriesById = new Map(
+    chunks.map((entry) => [entry.id ?? fallbackId(entry), entry]),
+  )
+
+  return matches.flatMap(({ id, score }) => {
+    const entry = entriesById.get(id)
+    return entry ? [toDocument(entry, score)] : []
+  })
+}
+
 /** 将中文连续文本拆成二元词组，同时保留英文和技术标识符。 */
 export function tokenizeQuery(query: string): string[] {
   const normalized = query.toLowerCase()
