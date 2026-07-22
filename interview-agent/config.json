@@ -13,6 +13,14 @@
     "primary": "deepseek-chat",
     "fallback": "deepseek-chat"
   },
+  "retrieval": {
+    "provider": "cloudflare-vectorize",
+    "vector_index_name": "interview-agent-index",
+    "embedding_model": "@cf/baai/bge-m3",
+    "embedding_dimensions": 1024,
+    "min_vector_score": 0.35,
+    "fallback": "keyword"
+  },
   "index_storage": {
     "repository_owner": "XRX193",
     "repository_name": "An-Agent-For-Interview",

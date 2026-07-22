@@ -46,6 +46,17 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: interview-agent/worker/package-lock.json
+
+      - name: Install Wrangler
+        working-directory: ./interview-agent/worker
+        run: npm ci
+
       - name: Test indexer
         run: python -m unittest discover -s interview-agent/indexer/tests -v
 
@@ -61,14 +72,52 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Ensure Vectorize index
+        working-directory: ./interview-agent/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VECTOR_INDEX_NAME: interview-agent-index
+        run: |
+          if ! npx wrangler vectorize get "$VECTOR_INDEX_NAME" >/dev/null 2>&1; then
+            npx wrangler vectorize create "$VECTOR_INDEX_NAME" --dimensions=1024 --metric=cosine || \
+              npx wrangler vectorize get "$VECTOR_INDEX_NAME"
+          fi
+          if ! npx wrangler vectorize list-metadata-index "$VECTOR_INDEX_NAME" | grep -q repo; then
+            npx wrangler vectorize create-metadata-index "$VECTOR_INDEX_NAME" \
+              --propertyName=repo --type=string || \
+              npx wrangler vectorize list-metadata-index "$VECTOR_INDEX_NAME" | grep -q repo
+          fi
+
+      - name: Sync Vectorize
+        working-directory: ./interview-agent/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VECTOR_INDEX_NAME: interview-agent-index
+        run: |
+          PLAN_DIR="../indexer/_vector_plan"
+          if [ -s "$PLAN_DIR/upsert.ndjson" ]; then
+            npx wrangler vectorize upsert "$VECTOR_INDEX_NAME" --file="$PLAN_DIR/upsert.ndjson"
+          fi
+          if [ -s "$PLAN_DIR/delete-ids.txt" ]; then
+            xargs -r -n 500 npx wrangler vectorize delete-vectors "$VECTOR_INDEX_NAME" --ids \
+              < "$PLAN_DIR/delete-ids.txt"
+          fi
 
       - name: Commit search index
         run: |
-          if ! git diff --quiet -- interview-agent/search_index.json; then
+          git add interview-agent/search_index.json
+          if [ -f interview-agent/vector_index_state.json ]; then
+            git add interview-agent/vector_index_state.json
+          fi
+          if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add interview-agent/search_index.json
-            git commit -m "chore: 更新搜索索引"
+            git commit -m "chore: 更新搜索与向量索引"
             git push origin HEAD:main
           fi
 
@@ -80,4 +129,4 @@ jobs:
           echo "- 索引模式：${{ github.event.inputs.mode || 'incremental (定时)' }}" >> $GITHUB_STEP_SUMMARY
           echo "- 运行时间：$(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> 检查仓库中的 search_index.json 确认索引是否已更新。" >> $GITHUB_STEP_SUMMARY
+          echo "> 检查 search_index.json 和 vector_index_state.json 确认同步状态。" >> $GITHUB_STEP_SUMMARY

@@ -29,6 +29,15 @@ class IndexerConfig:
     chunk_overlap_tokens: int = 50     # 相邻 chunk 重叠量（tokens）
     max_file_size_kb: int = 200        # 跳过超过此大小的文件
 
+    # ===== 向量检索 =====
+    vector_enabled: bool = True
+    vector_index_name: str = "interview-agent-index"
+    embedding_model: str = "@cf/baai/bge-m3"
+    embedding_dimensions: int = 1024
+    embedding_batch_size: int = 16
+    cloudflare_account_id: str = ""
+    cloudflare_api_token: str = ""
+
     # ===== 文件过滤 =====
     # 始终跳过的目录
     skip_dirs: list[str] = field(default_factory=lambda: [
@@ -85,11 +94,25 @@ class IndexerConfig:
             cfg.repo_mode = repo_section.get("mode", "all_public")
             cfg.repo_exclude = repo_section.get("exclude", ["dotfiles"])
             cfg.repo_include = repo_section.get("include", [])
+            retrieval_section = json_cfg.get("retrieval", {})
+            cfg.vector_enabled = retrieval_section.get("provider") == "cloudflare-vectorize"
+            cfg.vector_index_name = retrieval_section.get("vector_index_name", cfg.vector_index_name)
+            cfg.embedding_model = retrieval_section.get("embedding_model", cfg.embedding_model)
+            cfg.embedding_dimensions = int(
+                retrieval_section.get("embedding_dimensions", cfg.embedding_dimensions)
+            )
 
         # 2. 环境变量覆盖敏感信息
         cfg.github_token = os.getenv("GITHUB_TOKEN", os.getenv("GH_TOKEN", ""))
+        cfg.cloudflare_account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID", "")
+        cfg.cloudflare_api_token = os.getenv("CLOUDFLARE_API_TOKEN", "")
         # 2. 环境变量也覆盖非敏感配置
         cfg.github_username = os.getenv("GITHUB_USERNAME", cfg.github_username)
+        cfg.vector_index_name = os.getenv("VECTOR_INDEX_NAME", cfg.vector_index_name)
+        cfg.embedding_model = os.getenv("EMBEDDING_MODEL", cfg.embedding_model)
+        cfg.embedding_dimensions = int(
+            os.getenv("EMBEDDING_DIMENSIONS", str(cfg.embedding_dimensions))
+        )
 
         return cfg
 
@@ -100,4 +123,6 @@ class IndexerConfig:
             missing.append("github_username: 需要 GitHub 用户名来拉取公开仓库")
         if self.repo_mode == "listed" and not self.repo_include:
             missing.append("repo_include: 在 listed 模式下需要指定仓库列表")
+        if self.vector_enabled and self.embedding_dimensions <= 0:
+            missing.append("embedding_dimensions: 必须大于 0")
         return missing

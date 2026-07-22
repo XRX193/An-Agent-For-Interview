@@ -7,6 +7,13 @@ compatibility_flags = ["nodejs_compat_v2"]
 [vars]
 ENVIRONMENT = "production"
 
+[ai]
+binding = "AI"
+
+[[vectorize]]
+binding = "VECTOR_INDEX"
+index_name = "interview-agent-index"
+
 # ===== 敏感变量通过 wrangler secret put 设置，或通过 GitHub Actions: =====
 # DEEPSEEK_API_KEY    (必需，DeepSeek API 密钥)
 

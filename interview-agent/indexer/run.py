@@ -38,6 +38,7 @@ from cloner import get_public_repos, clone_or_pull, cleanup_clones
 from filters import collect_files
 from chunker import chunk_repo_files
 from upsert import load_index_state, upsert_chunks
+from vectorize import prepare_vector_sync
 
 
 def main():
@@ -111,6 +112,14 @@ def main():
 
     if mode == "incremental" and not repos and not removed_repos:
         print("  ✅ 所有仓库均为最新，无需更新索引")
+        if not args.dry_run:
+            print("\n📋 检查 Vectorize 增量同步...")
+            vector_summary = prepare_vector_sync(config)
+            if vector_summary.get("enabled"):
+                print(
+                    "  ✅ 向量同步计划已生成: "
+                    f"upsert {vector_summary['upsert_count']}，delete {vector_summary['delete_count']}"
+                )
         return
 
     # ---- Step 2: 克隆 + 索引 ----
@@ -211,6 +220,14 @@ Topics: {', '.join(repo.get('topics', []))}
         repo_updates=next_updates,
     )
     print(f"  ✅ 索引共包含 {count} 个文档")
+
+    print("\n📋 Step 4: 准备 Vectorize 增量同步...")
+    vector_summary = prepare_vector_sync(config)
+    if vector_summary.get("enabled"):
+        print(
+            "  ✅ 向量同步计划已生成: "
+            f"upsert {vector_summary['upsert_count']}，delete {vector_summary['delete_count']}"
+        )
 
     # ---- 清理 ----
     print(f"\n🧹 清理克隆目录: {config.clone_dir}")

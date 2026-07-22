@@ -12,6 +12,7 @@ from chunker import Chunk, _chunk_by_blank_lines
 from config import IndexerConfig
 from filters import should_skip_file
 from upsert import chunks_to_json, upsert_chunks
+from vectorize import calculate_sync_plan, prepare_vector_sync
 from cloner import clone_or_pull
 import run
 
@@ -116,6 +117,90 @@ class IndexMergeTests(unittest.TestCase):
                 run.main()
 
             write_index.assert_not_called()
+
+    def test_current_json_index_still_checks_vector_sync(self):
+        config = IndexerConfig(github_username="candidate")
+        repo = {"name": "demo", "updated_at": "same"}
+        with (
+            patch("run.IndexerConfig.from_env", return_value=config),
+            patch("run.get_public_repos", return_value=[repo]),
+            patch("run.load_index_state", return_value={
+                "chunks": [{"id": "existing"}],
+                "repo_updates": {"demo": "same"},
+            }),
+            patch("run.prepare_vector_sync", return_value={
+                "enabled": True,
+                "upsert_count": 1,
+                "delete_count": 0,
+            }) as prepare_vectors,
+            patch.object(sys, "argv", ["run.py", "--incremental"]),
+        ):
+            run.main()
+
+        prepare_vectors.assert_called_once_with(config)
+
+
+class VectorSyncTests(unittest.TestCase):
+    def test_sync_plan_upserts_new_ids_and_deletes_removed_ids(self):
+        config = IndexerConfig(embedding_model="model-v1", embedding_dimensions=3)
+        index_data = {
+            "chunks": [
+                {"id": "keep", "content": "same"},
+                {"id": "new", "content": "changed"},
+            ]
+        }
+        state = {
+            "index_name": "interview-agent-index",
+            "model": "model-v1",
+            "dimensions": 3,
+            "vector_ids": ["keep", "removed"],
+        }
+
+        upserts, deletes = calculate_sync_plan(index_data, state, config)
+
+        self.assertEqual([chunk["id"] for chunk in upserts], ["new"])
+        self.assertEqual(deletes, ["removed"])
+
+    def test_vector_plan_writes_wrangler_ndjson_and_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            search_index = root / "search_index.json"
+            state_path = root / "vector_index_state.json"
+            plan_dir = root / "plan"
+            search_index.write_text(json.dumps({
+                "chunks": [{
+                    "id": "chunk-1",
+                    "repo": "demo",
+                    "path": "src/app.py",
+                    "content": "print('ok')",
+                    "level": "code",
+                    "start_line": 1,
+                    "end_line": 1,
+                }],
+            }), encoding="utf-8")
+            config = IndexerConfig(
+                cloudflare_account_id="account",
+                cloudflare_api_token="token",
+                embedding_model="model-v1",
+                embedding_dimensions=3,
+            )
+
+            with (
+                patch("vectorize.index_path", return_value=str(search_index)),
+                patch("vectorize.vector_state_path", return_value=state_path),
+                patch("vectorize.vector_plan_dir", return_value=plan_dir),
+            ):
+                summary = prepare_vector_sync(
+                    config,
+                    embed_batch=lambda texts, _config: [[0.1, 0.2, 0.3] for _ in texts],
+                )
+
+            record = json.loads((plan_dir / "upsert.ndjson").read_text(encoding="utf-8"))
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(summary["upsert_count"], 1)
+            self.assertEqual(record["id"], "chunk-1")
+            self.assertEqual(record["metadata"]["repo"], "demo")
+            self.assertEqual(state["vector_ids"], ["chunk-1"])
 
 
 if __name__ == "__main__":
