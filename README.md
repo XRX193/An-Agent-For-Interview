@@ -167,7 +167,7 @@ Secrets：
 | 名称 | 用途 |
 |:-----|:-----|
 | `DEEPSEEK_API_KEY` | Worker 调用 DeepSeek |
-| `CLOUDFLARE_API_TOKEN` | 部署 Worker、调用 Workers AI、维护 Vectorize 索引 |
+| `CLOUDFLARE_API_TOKEN` | 部署 Worker、调用 Workers AI、维护 Vectorize 索引；权限见下方 |
 | `CLOUDFLARE_ACCOUNT_ID` | 指定 Cloudflare 账号 |
 
 Variables：
@@ -177,7 +177,16 @@ Variables：
 | `VITE_API_BASE` | Cloudflare Worker 地址，可使用根地址或 `/api` 地址 | `https://interview-agent-api.example.workers.dev` |
 
 GitHub Actions 自带的 `GITHUB_TOKEN` 用于更新索引，无需手动创建 PAT。
-Cloudflare Token 需要覆盖 Worker 部署、Workers AI 调用和 Vectorize 读写权限。工作流会自动创建 1024 维余弦索引及 `repo` metadata 索引。
+
+`CLOUDFLARE_API_TOKEN` 必须是自定义 API Token，并为 `CLOUDFLARE_ACCOUNT_ID` 对应账号配置以下 **Account** 权限：
+
+| 权限 | 级别 | 用途 |
+|:-----|:-----|:-----|
+| Workers Scripts | Edit | 部署 Worker |
+| Workers AI | Read | 生成查询和仓库片段的 Embedding |
+| Vectorize | Edit | 创建索引、metadata 索引及同步向量 |
+
+账号成员角色（包括 Super Administrator）不会覆盖自定义 Token 自身的权限。修改或重新创建 Token 后，必须同步更新 GitHub Actions 中的 `CLOUDFLARE_API_TOKEN` Secret。工作流会先验证 Vectorize 访问权限，再自动创建 1024 维余弦索引及 `repo` metadata 索引。
 
 ### 4. 首次部署
 

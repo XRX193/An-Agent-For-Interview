@@ -6,6 +6,7 @@ on:
     paths:
       - 'interview-agent/config.json'
       - 'interview-agent/indexer/**'
+      - '.github/scripts/ensure-vectorize-index.mjs'
       - '.github/workflows/index-repos.yml'
   schedule:
     # 每周日凌晨 2:00 UTC（北京时间上午 10:00）
@@ -81,16 +82,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           VECTOR_INDEX_NAME: interview-agent-index
-        run: |
-          if ! npx wrangler vectorize get "$VECTOR_INDEX_NAME" >/dev/null 2>&1; then
-            npx wrangler vectorize create "$VECTOR_INDEX_NAME" --dimensions=1024 --metric=cosine || \
-              npx wrangler vectorize get "$VECTOR_INDEX_NAME"
-          fi
-          if ! npx wrangler vectorize list-metadata-index "$VECTOR_INDEX_NAME" | grep -q repo; then
-            npx wrangler vectorize create-metadata-index "$VECTOR_INDEX_NAME" \
-              --propertyName=repo --type=string || \
-              npx wrangler vectorize list-metadata-index "$VECTOR_INDEX_NAME" | grep -q repo
-          fi
+        run: node "$GITHUB_WORKSPACE/.github/scripts/ensure-vectorize-index.mjs"
 
       - name: Sync Vectorize
         working-directory: ./interview-agent/worker
