@@ -11,8 +11,8 @@ on:
       - '.github/scripts/ensure-vectorize-index.mjs'
       - '.github/workflows/index-repos.yml'
   schedule:
-    # 每周日凌晨 2:00 UTC（北京时间上午 10:00）
-    - cron: '0 2 * * 0'
+    # 每 6 小时检查一次公开仓库更新
+    - cron: '0 */6 * * *'
   workflow_dispatch:
     inputs:
       mode:
