@@ -1,6 +1,6 @@
 name: Deploy Worker to Cloudflare
 
-# Supports manual restarts after Cloudflare credential changes.
+# Use workflow_dispatch to retry after Cloudflare credential changes.
 
 on:
   push:
