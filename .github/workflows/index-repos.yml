@@ -1,5 +1,7 @@
 name: Index GitHub Repositories
 
+# Supports manual restarts after Cloudflare credential changes.
+
 on:
   push:
     branches: [main]

@@ -1,5 +1,7 @@
 name: Deploy Worker to Cloudflare
 
+# Supports manual restarts after Cloudflare credential changes.
+
 on:
   push:
     branches: [main]
