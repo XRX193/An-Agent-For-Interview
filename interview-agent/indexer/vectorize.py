@@ -15,6 +15,14 @@ from upsert import index_path
 STATE_SCHEMA_VERSION = 1
 
 
+class EmbeddingQuotaExceeded(RuntimeError):
+    """Workers AI daily free allocation is exhausted."""
+
+
+def _is_daily_quota_error(detail: str) -> bool:
+    return "daily free allocation" in detail.lower()
+
+
 def vector_state_path() -> Path:
     return Path(__file__).resolve().parent.parent / "vector_index_state.json"
 
@@ -84,16 +92,30 @@ def prepare_vector_sync(
             "enabled": True,
             "upsert_count": 0,
             "delete_count": 0,
+            "quota_exhausted": False,
+            "deferred_upsert_count": 0,
             "upsert_path": str(upsert_path),
             "delete_path": str(delete_path),
         }
 
     embedding_function = embed_batch or request_embeddings
+    completed_upsert_ids: set[str] = set()
+    quota_exhausted = False
+    deferred_upsert_count = 0
     if upsert_chunks:
         with upsert_path.open("w", encoding="utf-8", newline="\n") as output:
             for offset in range(0, len(upsert_chunks), config.embedding_batch_size):
                 batch = upsert_chunks[offset:offset + config.embedding_batch_size]
-                vectors = embedding_function([chunk["content"] for chunk in batch], config)
+                try:
+                    vectors = embedding_function([chunk["content"] for chunk in batch], config)
+                except EmbeddingQuotaExceeded as error:
+                    quota_exhausted = True
+                    deferred_upsert_count = len(upsert_chunks) - offset
+                    print(
+                        "  [warn] Workers AI daily quota exhausted; "
+                        f"deferring {deferred_upsert_count} vector(s): {error}"
+                    )
+                    break
                 if len(vectors) != len(batch):
                     raise RuntimeError("Embedding 返回数量与输入片段数量不一致")
                 for chunk, vector in zip(batch, vectors):
@@ -112,6 +134,7 @@ def prepare_vector_sync(
                         metadata["end_line"] = chunk["end_line"]
                     record = {"id": chunk["id"], "values": vector, "metadata": metadata}
                     output.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+                    completed_upsert_ids.add(str(chunk["id"]))
                 print(f"  向量生成进度: {min(offset + len(batch), len(upsert_chunks))}/{len(upsert_chunks)}")
 
     if delete_ids:
@@ -122,22 +145,35 @@ def prepare_vector_sync(
         for chunk in index_data.get("chunks", [])
         if isinstance(chunk, dict) and chunk.get("id")
     )
-    state = {
-        "schema_version": STATE_SCHEMA_VERSION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "index_name": config.vector_index_name,
-        "model": config.embedding_model,
-        "dimensions": config.embedding_dimensions,
-        "vector_ids": current_ids,
-    }
-    vector_state_path().write_text(
-        json.dumps(state, ensure_ascii=False, separators=(",", ":")) + "\n",
-        encoding="utf-8",
+    previous_ids = {str(value) for value in previous_state.get("vector_ids", [])}
+    model_changed = (
+        previous_state.get("index_name") != config.vector_index_name
+        or previous_state.get("model") != config.embedding_model
+        or previous_state.get("dimensions") != config.embedding_dimensions
     )
+    synced_ids = set(completed_upsert_ids)
+    if not model_changed:
+        synced_ids.update(previous_ids & set(current_ids))
+
+    if completed_upsert_ids or delete_ids:
+        state = {
+            "schema_version": STATE_SCHEMA_VERSION,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "index_name": config.vector_index_name,
+            "model": config.embedding_model,
+            "dimensions": config.embedding_dimensions,
+            "vector_ids": sorted(synced_ids),
+        }
+        vector_state_path().write_text(
+            json.dumps(state, ensure_ascii=False, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
     return {
         "enabled": True,
-        "upsert_count": len(upsert_chunks),
+        "upsert_count": len(completed_upsert_ids),
         "delete_count": len(delete_ids),
+        "quota_exhausted": quota_exhausted,
+        "deferred_upsert_count": deferred_upsert_count,
         "upsert_path": str(upsert_path),
         "delete_path": str(delete_path),
     }
@@ -170,8 +206,10 @@ def request_embeddings(texts: list[str], config: IndexerConfig) -> list[list[flo
                 raise RuntimeError("Workers AI 响应缺少 result.data")
             return vectors
         except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")
+            if _is_daily_quota_error(detail):
+                raise EmbeddingQuotaExceeded(detail) from error
             if error.code not in {429, 500, 502, 503, 504} or attempt == 2:
-                detail = error.read().decode("utf-8", errors="replace")
                 raise RuntimeError(f"Workers AI 请求失败 ({error.code}): {detail}") from error
             time.sleep(2 ** attempt)
         except urllib.error.URLError as error:
