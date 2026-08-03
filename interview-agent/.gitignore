@@ -14,6 +14,7 @@ worker/dist/
 indexer/_clones/
 indexer/repos.json
 indexer/_vector_plan/
+search_index.json
 
 # ===== Claude Code =====
 .claude/

@@ -46,13 +46,43 @@ def calculate_sync_plan(index_data: dict, previous_state: dict, config: IndexerC
         if isinstance(chunk, dict) and chunk.get("id")
     }
     previous_ids = {str(value) for value in previous_state.get("vector_ids", [])}
+    previous_by_repo = {
+        str(repo): {str(vector_id) for vector_id in vector_ids}
+        for repo, vector_ids in previous_state.get("repo_vector_ids", {}).items()
+        if isinstance(vector_ids, list)
+    }
     model_changed = (
         previous_state.get("index_name") != config.vector_index_name
         or previous_state.get("model") != config.embedding_model
         or previous_state.get("dimensions") != config.embedding_dimensions
     )
-    upsert_ids = set(current_by_id) if model_changed else set(current_by_id) - previous_ids
-    delete_ids = previous_ids - set(current_by_id)
+    processed_repos = {str(repo) for repo in index_data.get("processed_repos", [])}
+    current_repos = {str(repo) for repo in index_data.get("current_repos", [])}
+    has_repository_scope = "processed_repos" in index_data and "current_repos" in index_data
+    if not has_repository_scope:
+        upsert_ids = set(current_by_id) if model_changed else set(current_by_id) - previous_ids
+        delete_ids = previous_ids - set(current_by_id)
+        return [current_by_id[value] for value in sorted(upsert_ids)], sorted(delete_ids)
+    is_full_sync = (
+        index_data.get("mode") == "full"
+        or model_changed
+        or (
+            not previous_by_repo
+            and processed_repos == current_repos
+        )
+    )
+    if is_full_sync:
+        upsert_ids = set(current_by_id)
+        delete_ids = previous_ids - set(current_by_id)
+    else:
+        old_ids = set().union(
+            *(previous_by_repo.get(repo, set()) for repo in processed_repos),
+        ) if processed_repos else set()
+        removed_ids = set().union(
+            *(ids for repo, ids in previous_by_repo.items() if repo not in current_repos),
+        ) if previous_by_repo else set()
+        upsert_ids = set(current_by_id) - previous_ids
+        delete_ids = (old_ids | removed_ids) - set(current_by_id)
     return [current_by_id[value] for value in sorted(upsert_ids)], sorted(delete_ids)
 
 
@@ -67,9 +97,20 @@ def prepare_vector_sync(
         print("  [warn] 未配置 Cloudflare 凭据，跳过向量同步计划")
         return {"enabled": False, "reason": "missing Cloudflare credentials"}
 
+    if not Path(index_path()).exists():
+        return {"enabled": True, "upsert_count": 0, "delete_count": 0}
+
     with open(index_path(), "r", encoding="utf-8") as file:
         index_data = json.load(file)
     previous_state = load_vector_state()
+    processed_repos = {str(repo) for repo in index_data.get("processed_repos", [])}
+    current_repos = {str(repo) for repo in index_data.get("current_repos", [])}
+    if (
+        previous_state.get("vector_ids")
+        and not previous_state.get("repo_vector_ids")
+        and processed_repos != current_repos
+    ):
+        raise RuntimeError("A full index run is required to migrate legacy Vectorize state")
     upsert_chunks, delete_ids = calculate_sync_plan(index_data, previous_state, config)
 
     plan_dir = vector_plan_dir()
@@ -105,11 +146,17 @@ def prepare_vector_sync(
                         "repo": chunk.get("repo", ""),
                         "path": chunk.get("path", ""),
                         "level": chunk.get("level", "code"),
+                        "language": chunk.get("language", ""),
                     }
                     if chunk.get("start_line"):
                         metadata["start_line"] = chunk["start_line"]
                     if chunk.get("end_line"):
                         metadata["end_line"] = chunk["end_line"]
+                    default_branch = chunk.get("metadata", {}).get("default_branch")
+                    if isinstance(default_branch, str) and default_branch:
+                        metadata["default_branch"] = default_branch
+                    if chunk.get("path") == "__meta__":
+                        metadata["summary"] = str(chunk.get("content", ""))[:8_000]
                     record = {"id": chunk["id"], "values": vector, "metadata": metadata}
                     output.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
                 print(f"  向量生成进度: {min(offset + len(batch), len(upsert_chunks))}/{len(upsert_chunks)}")
@@ -117,11 +164,37 @@ def prepare_vector_sync(
     if delete_ids:
         delete_path.write_text("\n".join(delete_ids) + "\n", encoding="utf-8")
 
-    current_ids = sorted(
-        str(chunk["id"])
-        for chunk in index_data.get("chunks", [])
-        if isinstance(chunk, dict) and chunk.get("id")
+    previous_by_repo = {
+        str(repo): [str(vector_id) for vector_id in vector_ids]
+        for repo, vector_ids in previous_state.get("repo_vector_ids", {}).items()
+        if isinstance(vector_ids, list)
+    }
+    current_by_repo: dict[str, list[str]] = {}
+    for chunk in index_data.get("chunks", []):
+        if isinstance(chunk, dict) and chunk.get("id") and chunk.get("repo"):
+            current_by_repo.setdefault(str(chunk["repo"]), []).append(str(chunk["id"]))
+
+    processed_repos = {str(repo) for repo in index_data.get("processed_repos", [])}
+    current_repos = {str(repo) for repo in index_data.get("current_repos", [])}
+    has_repository_scope = "processed_repos" in index_data and "current_repos" in index_data
+    is_full_sync = (
+        index_data.get("mode") == "full"
+        or not has_repository_scope
+        or (
+            not previous_by_repo
+            and processed_repos == current_repos
+        )
     )
+    if is_full_sync:
+        next_by_repo = current_by_repo
+    else:
+        next_by_repo = previous_by_repo
+        for repo in processed_repos:
+            next_by_repo[repo] = current_by_repo.get(repo, [])
+        for repo in set(next_by_repo) - current_repos:
+            del next_by_repo[repo]
+
+    current_ids = sorted({vector_id for vector_ids in next_by_repo.values() for vector_id in vector_ids})
     state = {
         "schema_version": STATE_SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -129,6 +202,10 @@ def prepare_vector_sync(
         "model": config.embedding_model,
         "dimensions": config.embedding_dimensions,
         "vector_ids": current_ids,
+        "repo_vector_ids": {
+            repo: sorted(vector_ids)
+            for repo, vector_ids in sorted(next_by_repo.items())
+        },
     }
     vector_state_path().write_text(
         json.dumps(state, ensure_ascii=False, separators=(",", ":")) + "\n",

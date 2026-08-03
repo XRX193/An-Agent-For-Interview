@@ -113,22 +113,16 @@ test('separates the index repository owner from the candidate account', async (c
 test('uses Workers AI and Vectorize before hydrating source content', async (context) => {
   const originalFetch = globalThis.fetch
   let queryOptions: VectorizeQueryOptions | undefined
-  globalThis.fetch = (async () => new Response(JSON.stringify({
-    chunks: [{
-      id: 'vector-match',
-      repo: 'portfolio',
-      path: 'src/vector.ts',
-      content: 'export const semanticSearch = true',
-      level: 'code',
-      language: 'TypeScript',
-      start_line: 4,
-      end_line: 8,
-    }],
-  }))) as typeof fetch
+  let requestedUrl = ''
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    requestedUrl = String(input)
+    return new Response('line 1\nline 2\nline 3\nexport const semanticSearch = true\nline 5\nline 6')
+  }) as typeof fetch
   context.after(() => { globalThis.fetch = originalFetch })
 
   const env: WorkerEnv = {
     DEEPSEEK_API_KEY: 'test',
+    GITHUB_USERNAME: 'candidate',
     INDEX_REPO_OWNER: 'vector-owner-for-test',
     INDEX_REPO_NAME: 'vector-repository',
     AI: {
@@ -137,7 +131,22 @@ test('uses Workers AI and Vectorize before hydrating source content', async (con
     VECTOR_INDEX: {
       query: async (_vector: number[], options?: VectorizeQueryOptions) => {
         queryOptions = options
-        return { matches: [{ id: 'vector-match', score: 0.91 }], count: 1 }
+        return {
+          matches: [{
+            id: 'vector-match',
+            score: 0.91,
+            metadata: {
+              repo: 'portfolio',
+              path: 'src/vector.ts',
+              level: 'code',
+              language: 'typescript',
+              start_line: 4,
+              end_line: 5,
+              default_branch: 'develop',
+            },
+          }],
+          count: 1,
+        }
       },
     } as unknown as VectorizeIndex,
   }
@@ -149,7 +158,10 @@ test('uses Workers AI and Vectorize before hydrating source content', async (con
 
   assert.equal(results[0].path, 'src/vector.ts')
   assert.equal(results[0].score, 0.91)
+  assert.equal(results[0].content, 'export const semanticSearch = true\nline 5')
+  assert.match(requestedUrl, /candidate\/portfolio\/develop\/src\/vector.ts/)
   assert.equal(queryOptions?.topK, 3)
+  assert.equal(queryOptions?.returnMetadata, 'all')
   assert.deepEqual(queryOptions?.filter, { repo: 'portfolio' })
 })
 

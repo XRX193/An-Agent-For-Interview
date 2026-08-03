@@ -53,17 +53,21 @@ class ChunkerTests(unittest.TestCase):
 class IndexMergeTests(unittest.TestCase):
     def test_incremental_write_replaces_only_processed_repository(self):
         with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "search_index.json"
+            output = Path(directory) / "project_index.json"
+            staging_output = Path(directory) / "search_index.json"
             output.write_text(json.dumps({
                 "chunks": [
-                    {"id": "old", "repo": "changed", "path": "old.py", "content": "old"},
-                    {"id": "keep", "repo": "stable", "path": "keep.py", "content": "keep"},
+                    {"id": "old", "repo": "changed", "path": "__meta__", "content": "old"},
+                    {"id": "keep", "repo": "stable", "path": "__meta__", "content": "keep"},
                 ],
                 "repo_updates": {"changed": "old", "stable": "same"},
             }), encoding="utf-8")
-            replacement = Chunk("changed", "new.py", "new", "code", start_line=1, end_line=1)
+            replacement = Chunk("changed", "__meta__", "new", "project", start_line=1, end_line=1)
 
-            with patch("upsert.index_path", return_value=str(output)):
+            with (
+                patch("upsert.index_path", return_value=str(staging_output)),
+                patch("upsert.project_index_path", return_value=str(output)),
+            ):
                 upsert_chunks(
                     [replacement],
                     IndexerConfig(),
@@ -74,7 +78,7 @@ class IndexMergeTests(unittest.TestCase):
                 )
 
             data = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual({item["path"] for item in data["chunks"]}, {"new.py", "keep.py"})
+            self.assertEqual({item["content"] for item in data["chunks"]}, {"new", "keep"})
             self.assertEqual(data["repo_updates"]["changed"], "new")
 
     def test_ide_directories_are_skipped(self):
@@ -160,6 +164,33 @@ class VectorSyncTests(unittest.TestCase):
 
         self.assertEqual([chunk["id"] for chunk in upserts], ["new"])
         self.assertEqual(deletes, ["removed"])
+
+    def test_scoped_sync_replaces_vectors_for_changed_repository(self):
+        config = IndexerConfig(embedding_model="model-v1", embedding_dimensions=3)
+        index_data = {
+            "mode": "incremental",
+            "processed_repos": ["changed"],
+            "current_repos": ["changed", "stable"],
+            "chunks": [
+                {"id": "keep", "repo": "changed", "content": "same"},
+                {"id": "new", "repo": "changed", "content": "new"},
+            ],
+        }
+        state = {
+            "index_name": "interview-agent-index",
+            "model": "model-v1",
+            "dimensions": 3,
+            "vector_ids": ["keep", "old", "stable-id"],
+            "repo_vector_ids": {
+                "changed": ["keep", "old"],
+                "stable": ["stable-id"],
+            },
+        }
+
+        upserts, deletes = calculate_sync_plan(index_data, state, config)
+
+        self.assertEqual([chunk["id"] for chunk in upserts], ["new"])
+        self.assertEqual(deletes, ["old"])
 
     def test_vector_plan_writes_wrangler_ndjson_and_state(self):
         with tempfile.TemporaryDirectory() as directory:

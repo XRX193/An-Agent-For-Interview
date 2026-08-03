@@ -1,4 +1,4 @@
-import { hydrateDocumentsByIds, listProjects, searchByKeywords } from './db'
+import { hydrateDocumentsFromVectorMatches, listProjects, searchByKeywords } from './db'
 import type { Chunk, Document, WorkerEnv } from './types'
 import config from './config'
 
@@ -32,13 +32,17 @@ export async function searchByVector(
 
   const result = await env.VECTOR_INDEX.query(vector, {
     topK: options.limit ?? config.limits.retrieve_top_k,
-    returnMetadata: 'none',
+    returnMetadata: 'all',
     filter: options.scope ? { repo: options.scope } : undefined,
   })
   const matches = result.matches
     .filter((match) => match.score >= config.retrieval.min_vector_score)
-    .map((match) => ({ id: match.id, score: match.score }))
-  return hydrateDocumentsByIds(matches, env)
+    .map((match) => ({
+      id: match.id,
+      score: match.score,
+      metadata: match.metadata as Record<string, unknown> | undefined,
+    }))
+  return hydrateDocumentsFromVectorMatches(matches, env)
 }
 
 export async function searchWithFallback(

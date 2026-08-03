@@ -68,6 +68,12 @@ jobs:
           MODE="${{ github.event.inputs.mode || 'incremental' }}"
           REPO_ARG="${{ github.event.inputs.repo }}"
 
+          # The first run after this migration records vector IDs per repository.
+          # A full pass is required so later incremental deletions remain correct.
+          if [ ! -f interview-agent/project_index.json ] || ! grep -q '"repo_vector_ids"' interview-agent/vector_index_state.json 2>/dev/null; then
+            MODE="full"
+          fi
+
           if [ -n "$REPO_ARG" ]; then
             python interview-agent/indexer/run.py --${MODE} --repo "$REPO_ARG"
           else
@@ -102,9 +108,9 @@ jobs:
               < "$PLAN_DIR/delete-ids.txt"
           fi
 
-      - name: Commit search index
+      - name: Commit project index state
         run: |
-          git add interview-agent/search_index.json
+          git add interview-agent/project_index.json
           if [ -f interview-agent/vector_index_state.json ]; then
             git add interview-agent/vector_index_state.json
           fi

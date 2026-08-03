@@ -29,6 +29,12 @@ interface CacheEntry {
   cachedAt: number
 }
 
+interface VectorMatch {
+  id: string
+  score: number
+  metadata?: Record<string, unknown>
+}
+
 const indexCache = new Map<string, CacheEntry>()
 const CACHE_TTL = 5 * 60 * 1000
 
@@ -42,7 +48,7 @@ function indexSource(env: WorkerEnv): IndexSource {
 
 async function loadIndex(env: WorkerEnv): Promise<SearchIndex> {
   const source = indexSource(env)
-  const url = `https://raw.githubusercontent.com/${source.owner}/${source.repository}/${source.branch}/interview-agent/search_index.json`
+  const url = `https://raw.githubusercontent.com/${source.owner}/${source.repository}/${source.branch}/interview-agent/project_index.json`
   const now = Date.now()
   const cached = indexCache.get(url)
   if (cached && now - cached.cachedAt < CACHE_TTL) return cached.data
@@ -61,19 +67,77 @@ async function loadIndex(env: WorkerEnv): Promise<SearchIndex> {
   }
 }
 
-export async function hydrateDocumentsByIds(
-  matches: Array<{ id: string; score: number }>,
+function stringMetadata(metadata: Record<string, unknown>, key: string, fallback = ''): string {
+  const value = metadata[key]
+  return typeof value === 'string' ? value : fallback
+}
+
+function numberMetadata(metadata: Record<string, unknown>, key: string, fallback = 0): number {
+  const value = metadata[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function isDocumentLevel(value: string): value is Document['level'] {
+  return value === 'project' || value === 'architecture' || value === 'code' || value === 'history'
+}
+
+function sourceUrl(owner: string, repo: string, branch: string, path: string): string {
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/')
+  return `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(branch)}/${encodedPath}`
+}
+
+function documentFromMetadata(match: VectorMatch, metadata: Record<string, unknown>, content: string): Document | undefined {
+  const repo = stringMetadata(metadata, 'repo')
+  const path = stringMetadata(metadata, 'path')
+  const level = stringMetadata(metadata, 'level', 'code')
+  if (!repo || !path || !isDocumentLevel(level)) return undefined
+
+  return {
+    id: match.id,
+    repo,
+    path,
+    content,
+    embedding: [],
+    level,
+    language: stringMetadata(metadata, 'language'),
+    score: match.score,
+    startLine: numberMetadata(metadata, 'start_line') || undefined,
+    endLine: numberMetadata(metadata, 'end_line') || undefined,
+    defaultBranch: stringMetadata(metadata, 'default_branch', 'main'),
+    metadata,
+  }
+}
+
+async function hydrateVectorMatch(match: VectorMatch, env: WorkerEnv): Promise<Document | undefined> {
+  const metadata = match.metadata ?? {}
+  const entry = documentFromMetadata(match, metadata, '')
+  if (!entry) return undefined
+
+  if (entry.path === '__meta__') {
+    const summary = stringMetadata(metadata, 'summary')
+    return summary ? { ...entry, content: summary } : undefined
+  }
+  if (entry.path.startsWith('/') || entry.path.split('/').some((part) => part === '..')) return undefined
+
+  const owner = env.GITHUB_USERNAME ?? config.github_username
+  const response = await fetch(sourceUrl(owner, entry.repo, entry.defaultBranch ?? 'main', entry.path), {
+    cf: { cacheTtl: 300 },
+  })
+  if (!response.ok) return undefined
+
+  const sourceLines = (await response.text()).split(/\r?\n/)
+  const startLine = entry.startLine ?? 1
+  const endLine = entry.endLine ?? sourceLines.length
+  const content = sourceLines.slice(Math.max(startLine - 1, 0), Math.max(endLine, startLine)).join('\n').slice(0, 18_000)
+  return content ? { ...entry, content } : undefined
+}
+
+export async function hydrateDocumentsFromVectorMatches(
+  matches: VectorMatch[],
   env: WorkerEnv,
 ): Promise<Document[]> {
-  const { chunks } = await loadIndex(env)
-  const entriesById = new Map(
-    chunks.map((entry) => [entry.id ?? fallbackId(entry), entry]),
-  )
-
-  return matches.flatMap(({ id, score }) => {
-    const entry = entriesById.get(id)
-    return entry ? [toDocument(entry, score)] : []
-  })
+  const documents = await Promise.all(matches.map((match) => hydrateVectorMatch(match, env)))
+  return documents.filter((document): document is Document => document !== undefined)
 }
 
 /** 将中文连续文本拆成二元词组，同时保留英文和技术标识符。 */

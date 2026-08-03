@@ -19,9 +19,16 @@ def index_path() -> str:
     )
 
 
+def project_index_path() -> str:
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "project_index.json",
+    )
+
+
 def load_index_state() -> dict:
     """读取已有索引；旧格式或损坏文件按空索引处理。"""
-    path = index_path()
+    path = project_index_path()
     if not os.path.exists(path):
         return {"chunks": [], "repo_updates": {}}
     try:
@@ -58,7 +65,8 @@ def upsert_chunks(
             if chunk.get("repo") in current and chunk.get("repo") not in processed
         ]
 
-    merged = retained + chunks_to_json(chunks)
+    serialized_chunks = chunks_to_json(chunks)
+    merged = retained + [chunk for chunk in serialized_chunks if chunk.get("path") == "__meta__"]
     unique: dict[str, dict] = {}
     for chunk in merged:
         chunk_id = chunk.get("id") or stable_chunk_id(chunk)
@@ -83,15 +91,26 @@ def upsert_chunks(
         "chunks": all_chunks,
     }
 
+    with open(project_index_path(), "w", encoding="utf-8", newline="\n") as file:
+        json.dump(data, file, ensure_ascii=False, separators=(",", ":"))
+        file.write("\n")
+
+    staging_data = {
+        "schema_version": SCHEMA_VERSION,
+        "mode": mode,
+        "processed_repos": sorted(processed),
+        "current_repos": sorted(current),
+        "chunks": serialized_chunks,
+    }
     output_path = index_path()
     with open(output_path, "w", encoding="utf-8", newline="\n") as file:
-        json.dump(data, file, ensure_ascii=False, separators=(",", ":"))
+        json.dump(staging_data, file, ensure_ascii=False, separators=(",", ":"))
         file.write("\n")
 
     file_size = os.path.getsize(output_path) / 1024
     print(f"  索引文件已保存: {output_path} ({file_size:.0f} KB)")
     print(f"  共 {len(all_chunks)} 个代码块")
-    return len(all_chunks)
+    return len(serialized_chunks)
 
 
 def stable_chunk_id(chunk: dict) -> str:
