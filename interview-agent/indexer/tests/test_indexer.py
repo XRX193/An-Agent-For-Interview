@@ -1,6 +1,8 @@
+import io
 import json
 import sys
 import tempfile
+import urllib.error
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,7 +14,12 @@ from chunker import Chunk, _chunk_by_blank_lines
 from config import IndexerConfig
 from filters import should_skip_file
 from upsert import chunks_to_json, upsert_chunks
-from vectorize import calculate_sync_plan, prepare_vector_sync
+from vectorize import (
+    EmbeddingQuotaExceeded,
+    calculate_sync_plan,
+    prepare_vector_sync,
+    request_embeddings,
+)
 from cloner import clone_or_pull, get_public_repos, get_related_pull_requests
 import run
 
@@ -312,6 +319,85 @@ class VectorSyncTests(unittest.TestCase):
             self.assertEqual(summary["upsert_count"], 1)
             self.assertEqual(record["id"], "chunk-1")
             self.assertEqual(record["metadata"]["repo"], "demo")
+            self.assertEqual(state["vector_ids"], ["chunk-1"])
+
+    def test_daily_free_allocation_error_is_not_retried(self):
+        response = (
+            b'{"errors":[{"message":"you have used up your daily free '
+            b'allocation of 10,000 neurons"}]}'
+        )
+
+        def quota_error():
+            return urllib.error.HTTPError(
+                "https://example.test/embeddings",
+                429,
+                "Too Many Requests",
+                {},
+                io.BytesIO(response),
+            )
+
+        config = IndexerConfig(
+            cloudflare_account_id="account",
+            cloudflare_api_token="token",
+        )
+        with (
+            patch("vectorize.urllib.request.urlopen", side_effect=[
+                quota_error(), quota_error(), quota_error(),
+            ]),
+            patch("vectorize.time.sleep") as sleep,
+        ):
+            with self.assertRaisesRegex(EmbeddingQuotaExceeded, "daily free allocation"):
+                request_embeddings(["chunk"], config)
+
+        sleep.assert_not_called()
+
+    def test_quota_exhaustion_keeps_completed_vector_plan_for_next_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            search_index = root / "search_index.json"
+            state_path = root / "vector_index_state.json"
+            plan_dir = root / "plan"
+            search_index.write_text(json.dumps({
+                "chunks": [
+                    {"id": "chunk-1", "repo": "demo", "path": "one.py", "content": "one"},
+                    {"id": "chunk-2", "repo": "demo", "path": "two.py", "content": "two"},
+                    {"id": "chunk-3", "repo": "demo", "path": "three.py", "content": "three"},
+                ],
+            }), encoding="utf-8")
+            config = IndexerConfig(
+                cloudflare_account_id="account",
+                cloudflare_api_token="token",
+                embedding_model="model-v1",
+                embedding_dimensions=3,
+                embedding_batch_size=1,
+            )
+            calls = 0
+
+            def embed_batch(_texts, _config):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    return [[0.1, 0.2, 0.3]]
+                raise EmbeddingQuotaExceeded(
+                    "you have used up your daily free allocation of 10,000 neurons"
+                )
+
+            with (
+                patch("vectorize.index_path", return_value=str(search_index)),
+                patch("vectorize.vector_state_path", return_value=state_path),
+                patch("vectorize.vector_plan_dir", return_value=plan_dir),
+            ):
+                summary = prepare_vector_sync(config, embed_batch=embed_batch)
+
+            records = [
+                json.loads(line)
+                for line in (plan_dir / "upsert.ndjson").read_text(encoding="utf-8").splitlines()
+            ]
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertTrue(summary["quota_exhausted"])
+            self.assertEqual(summary["upsert_count"], 1)
+            self.assertEqual(summary["deferred_upsert_count"], 2)
+            self.assertEqual([record["id"] for record in records], ["chunk-1"])
             self.assertEqual(state["vector_ids"], ["chunk-1"])
 
 
