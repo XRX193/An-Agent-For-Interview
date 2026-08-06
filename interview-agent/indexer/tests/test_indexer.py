@@ -13,7 +13,7 @@ from config import IndexerConfig
 from filters import should_skip_file
 from upsert import chunks_to_json, upsert_chunks
 from vectorize import calculate_sync_plan, prepare_vector_sync
-from cloner import clone_or_pull
+from cloner import clone_or_pull, get_public_repos, get_related_pull_requests
 import run
 
 
@@ -51,6 +51,41 @@ class ChunkerTests(unittest.TestCase):
 
 
 class IndexMergeTests(unittest.TestCase):
+    def test_public_repositories_include_collaborations_but_exclude_private(self):
+        config = IndexerConfig(github_username="candidate")
+        owned = {"name": "owned", "owner": {"login": "candidate"}}
+        collaboration = {
+            "name": "shared",
+            "full_name": "other/shared",
+            "owner": {"login": "other"},
+        }
+        private = {"name": "secret", "owner": {"login": "candidate"}, "private": True}
+
+        with patch("cloner.github_api_request", side_effect=[[owned, collaboration, private], []]) as request:
+            repos = get_public_repos(config)
+
+        self.assertEqual(repos, [owned, collaboration])
+        self.assertIn("type=all", request.call_args_list[0].args[0])
+
+    def test_external_repository_prs_include_changed_file_patches(self):
+        config = IndexerConfig(github_username="candidate")
+        repo = {"name": "shared", "owner": {"login": "other"}}
+        pull_request = {
+            "number": 42,
+            "title": "Improve validation",
+            "user": {"login": "candidate"},
+        }
+        changed_file = {"filename": "src/validate.ts", "patch": "+export const valid = true"}
+
+        with patch("cloner.github_api_request", side_effect=[
+            {"items": [pull_request]},
+            [changed_file],
+        ]) as request:
+            pull_requests = get_related_pull_requests(repo, config)
+
+        self.assertEqual(pull_requests[0]["files"], [changed_file])
+        self.assertIn("author%3Acandidate", request.call_args_list[0].args[0])
+
     def test_incremental_write_replaces_only_processed_repository(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "project_index.json"
@@ -101,6 +136,7 @@ class IndexMergeTests(unittest.TestCase):
             config = IndexerConfig(github_username="candidate", clone_dir=directory)
             repo = {
                 "name": "demo",
+                "owner": {"login": "candidate"},
                 "description": "Demo",
                 "language": "Python",
                 "clone_url": "https://github.com/candidate/demo.git",
@@ -121,6 +157,51 @@ class IndexMergeTests(unittest.TestCase):
                 run.main()
 
             write_index.assert_not_called()
+
+    def test_external_repository_indexes_prs_without_cloning_repository(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = IndexerConfig(
+                github_username="candidate",
+                clone_dir=directory,
+                vector_enabled=False,
+            )
+            repo = {
+                "name": "shared",
+                "full_name": "other/shared",
+                "owner": {"login": "other"},
+                "description": "Shared project",
+                "html_url": "https://github.com/other/shared",
+                "updated_at": "2026-08-06T00:00:00Z",
+                "default_branch": "main",
+            }
+            pull_request = {
+                "number": 7,
+                "title": "Add validation",
+                "body": "Adds input validation.",
+                "state": "closed",
+                "html_url": "https://github.com/other/shared/pull/7",
+                "user": {"login": "candidate"},
+                "files": [{"filename": "src/input.ts", "patch": "+export const valid = true"}],
+            }
+            with (
+                patch("run.IndexerConfig.from_env", return_value=config),
+                patch("run.get_public_repos", return_value=[repo]),
+                patch("run.get_related_pull_requests", return_value=[pull_request]),
+                patch("run.load_index_state", return_value={"chunks": [], "repo_updates": {}}),
+                patch("run.clone_or_pull") as clone,
+                patch("run.cleanup_clones"),
+                patch("run.atexit.register"),
+                patch("run.upsert_chunks", return_value=2) as write_index,
+                patch.object(sys, "argv", ["run.py", "--full"]),
+            ):
+                run.main()
+
+            clone.assert_not_called()
+            chunks = write_index.call_args.args[0]
+            self.assertEqual([chunk.level for chunk in chunks], ["project", "history"])
+            self.assertIn("src/input.ts", chunks[1].content)
+            self.assertEqual(chunks[1].metadata["source_url"], pull_request["html_url"])
+            self.assertEqual(write_index.call_args.kwargs["processed_repos"], {"other/shared"})
 
     def test_current_json_index_still_checks_vector_sync(self):
         config = IndexerConfig(github_username="candidate")

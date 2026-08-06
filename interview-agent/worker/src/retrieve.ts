@@ -79,6 +79,8 @@ export async function retrieveRelevantDocs(question: string, env: WorkerEnv, sco
     startLine: document.startLine,
     endLine: document.endLine,
     defaultBranch: document.defaultBranch,
+    sourceOwner: document.sourceOwner,
+    sourceUrl: document.sourceUrl,
   }))
 
   return { chunks, projects, method: retrieval.method }

@@ -21,6 +21,8 @@ export interface Chunk {
   startLine?: number
   endLine?: number
   defaultBranch?: string
+  sourceOwner?: string
+  sourceUrl?: string
 }
 
 /** 项目概览 */
@@ -82,5 +84,7 @@ export interface Document {
   startLine?: number
   endLine?: number
   defaultBranch?: string
+  sourceOwner?: string
+  sourceUrl?: string
   metadata: Record<string, unknown>
 }

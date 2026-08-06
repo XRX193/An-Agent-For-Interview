@@ -284,7 +284,8 @@ python -m unittest discover -s interview-agent/indexer/tests -v
 
 ## 安全边界
 
-- 仅索引配置账号的公开仓库。
+- 只克隆并索引配置账号所有的公开仓库源码。
+- 对所有者不同的公开仓库，只索引配置账号创建的公开 PR 及其可用 diff。
 - 浏览器请求受 CORS 来源白名单限制。
 - 客户端不能注入 `system` 历史消息。
 - 问题、请求体和对话历史均有长度限制。

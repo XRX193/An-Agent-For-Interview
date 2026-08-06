@@ -104,6 +104,8 @@ function documentFromMetadata(match: VectorMatch, metadata: Record<string, unkno
     startLine: numberMetadata(metadata, 'start_line') || undefined,
     endLine: numberMetadata(metadata, 'end_line') || undefined,
     defaultBranch: stringMetadata(metadata, 'default_branch', 'main'),
+    sourceOwner: stringMetadata(metadata, 'source_owner') || undefined,
+    sourceUrl: stringMetadata(metadata, 'source_url') || undefined,
     metadata,
   }
 }
@@ -113,13 +115,13 @@ async function hydrateVectorMatch(match: VectorMatch, env: WorkerEnv): Promise<D
   const entry = documentFromMetadata(match, metadata, '')
   if (!entry) return undefined
 
-  if (entry.path === '__meta__') {
+  if (entry.path === '__meta__' || entry.sourceUrl) {
     const summary = stringMetadata(metadata, 'summary')
     return summary ? { ...entry, content: summary } : undefined
   }
   if (entry.path.startsWith('/') || entry.path.split('/').some((part) => part === '..')) return undefined
 
-  const owner = env.GITHUB_USERNAME ?? config.github_username
+  const owner = entry.sourceOwner ?? env.GITHUB_USERNAME ?? config.github_username
   const response = await fetch(sourceUrl(owner, entry.repo, entry.defaultBranch ?? 'main', entry.path), {
     cf: { cacheTtl: 300 },
   })
@@ -188,6 +190,12 @@ function toDocument(entry: IndexEntry, score: number): Document {
     defaultBranch: typeof entry.metadata?.default_branch === 'string'
       ? entry.metadata.default_branch
       : 'main',
+    sourceOwner: typeof entry.metadata?.source_owner === 'string'
+      ? entry.metadata.source_owner
+      : undefined,
+    sourceUrl: typeof entry.metadata?.source_url === 'string'
+      ? entry.metadata.source_url
+      : undefined,
     metadata: entry.metadata ?? {},
   }
 }

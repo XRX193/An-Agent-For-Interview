@@ -155,7 +155,13 @@ def prepare_vector_sync(
                     default_branch = chunk.get("metadata", {}).get("default_branch")
                     if isinstance(default_branch, str) and default_branch:
                         metadata["default_branch"] = default_branch
-                    if chunk.get("path") == "__meta__":
+                    source_owner = chunk.get("metadata", {}).get("source_owner")
+                    if isinstance(source_owner, str) and source_owner:
+                        metadata["source_owner"] = source_owner
+                    source_url = chunk.get("metadata", {}).get("source_url")
+                    if isinstance(source_url, str) and source_url:
+                        metadata["source_url"] = source_url
+                    if chunk.get("path") == "__meta__" or chunk.get("level") == "history":
                         metadata["summary"] = str(chunk.get("content", ""))[:8_000]
                     record = {"id": chunk["id"], "values": vector, "metadata": metadata}
                     output.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")

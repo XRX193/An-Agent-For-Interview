@@ -42,6 +42,26 @@ test('only emits citations backed by the retrieved line range', () => {
   })
 })
 
+test('links external pull request citations to the original pull request', () => {
+  const chunks = [{
+    id: 'pr-42',
+    repo: 'other/shared',
+    path: 'pulls/42',
+    content: 'Improve validation',
+    level: 'history' as const,
+    sourceUrl: 'https://github.com/other/shared/pull/42',
+  }]
+
+  const result = extractFileRefs('[other/shared/pulls/42]', chunks, 'candidate')
+
+  assert.deepEqual(result.fileRefs, [{
+    repo: 'other/shared',
+    path: 'pulls/42',
+    line: undefined,
+    url: 'https://github.com/other/shared/pull/42',
+  }])
+})
+
 test('marks retrieved content as untrusted and exposes line ranges', () => {
   const prompt = buildSystemPrompt(
     { name: '候选人', title: '工程师', githubUsername: 'candidate', language: 'zh-CN' },

@@ -103,18 +103,19 @@ export function extractFileRefs(
   while ((match = refRegex.exec(answer)) !== null) {
     const fullPath = match[1]
     const line = match[2] ? parseInt(match[2]) : undefined
-    const [repo, ...pathParts] = fullPath.split('/')
-    const path = pathParts.join('/')
-
     const source = chunks.find((chunk) => {
-      if (chunk.repo !== repo || chunk.path !== path) return false
+      const expectedPath = `${chunk.repo}/${chunk.path}`
+      if (fullPath !== expectedPath) return false
       if (!line || !chunk.startLine || !chunk.endLine) return true
       return line >= chunk.startLine && line <= chunk.endLine
     })
 
     if (source) {
+      const repo = source.repo
+      const path = source.path
       const branch = source.defaultBranch ?? 'main'
-      const url = `https://github.com/${githubUsername}/${repo}/blob/${branch}/${path}${line ? `#L${line}` : ''}`
+      const url = source.sourceUrl
+        ?? `https://github.com/${source.sourceOwner ?? githubUsername}/${repo}/blob/${branch}/${path}${line ? `#L${line}` : ''}`
       if (fileRefs.some((reference) => reference.url === url)) continue
       fileRefs.push({
         repo,

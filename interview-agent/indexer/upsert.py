@@ -66,7 +66,13 @@ def upsert_chunks(
         ]
 
     serialized_chunks = chunks_to_json(chunks)
-    merged = retained + [chunk for chunk in serialized_chunks if chunk.get("path") == "__meta__"]
+    # Keep project summaries and PR records in the JSON fallback index. Source
+    # code stays out of this file because vector retrieval hydrates it from GitHub.
+    merged = retained + [
+        chunk
+        for chunk in serialized_chunks
+        if chunk.get("path") == "__meta__" or chunk.get("level") == "history"
+    ]
     unique: dict[str, dict] = {}
     for chunk in merged:
         chunk_id = chunk.get("id") or stable_chunk_id(chunk)
